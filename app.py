@@ -598,16 +598,16 @@ if not slab_file or not csv_file:
     with col1:
         st.markdown("""
 <div class="info-box">
-📂 <b>Step 1 — Slab.xlsx</b><br>
+<b>Step 1 - Slab.xlsx</b><br>
 Your commission/GT/fixed-fee rate table. Must have a <code>Rates</code> sheet with:<br>
-Brand Name · Category · slab limits (commission, GT, fixed fee)
+Brand Name - Category - slab limits (commission, GT, fixed fee)
 </div>""", unsafe_allow_html=True)
     with col2:
         st.markdown("""
 <div class="info-box">
-📄 <b>Step 2 — Orders CSV</b><br>
+<b>Step 2 - Orders CSV</b><br>
 Myntra Seller Orders export. Key columns needed:<br>
-<code>brand</code> · <code>article type</code> · <code>final amount</code> · <code>seller price</code>
+<code>brand</code> - <code>article type</code> - <code>final amount</code> - <code>seller price</code>
 </div>""", unsafe_allow_html=True)
     st.stop()
 
