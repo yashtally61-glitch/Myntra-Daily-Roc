@@ -206,16 +206,26 @@ def load_slab(file_bytes: bytes):
 
 
 def get_pwn_price(oms_map: dict, pwn_map: dict, closed_map: dict, seller_sku_code: str):
-    """
-    Resolve the PWN+10% price for an order row, following the chain:
-      seller sku code  --[Replace Sku: MYNTRA SKU CODE→OMS SKU CODE]-->  oms_sku
-      oms_sku --[Closed: OMS Child SKU→Closed Price]--> price            (preferred —
-          a SKU listed in Closed means it's no longer active, so its Closed
-          Price is the correct/current one even if it still also appears,
-          possibly stale, in Price We Need Excel)
-      oms_sku --[Price We Need Excel: OMS Child SKU→PWN+10%]--> price    (fallback)
-    Returns (price_or_None, oms_sku_or_None, source) where source is
-    "PWN", "Closed", or None.
+    key = str(seller_sku_code).strip()
+
+    # Step 1: Try direct match in Closed sheet (OMS Child SKU = seller sku code directly)
+    if key in closed_map:
+        return closed_map[key], key, "Closed"
+
+    # Step 2: Resolve via Replace Sku sheet (seller sku code → OMS Child SKU)
+    oms_sku = oms_map.get(key)
+    if not oms_sku:
+        return None, None, None
+
+    # Step 3: Check Price We Need Excel with resolved OMS SKU
+    if oms_sku in pwn_map:
+        return pwn_map[oms_sku], oms_sku, "PWN"
+
+    # Step 4: Check Closed sheet with resolved OMS SKU
+    if oms_sku in closed_map:
+        return closed_map[oms_sku], oms_sku, "Closed"
+
+    return None, oms_sku, None.
     """
     key = str(seller_sku_code).strip()
     oms_sku = oms_map.get(key)
