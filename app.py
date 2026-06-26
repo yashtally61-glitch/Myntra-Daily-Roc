@@ -673,7 +673,7 @@ if brands_in_result:
             st.dataframe(
                 display_df.style
                     .format({c: "₹{:,.2f}" for c in num_cols_disp if c in display_df.columns})
-                    .applymap(
+                    .map(
                         lambda v: "background-color:#f0fdf4;color:#166534;font-weight:600"
                         if isinstance(v, (int, float)) and v > 0 else "",
                         subset=["Myntra Payable ₹"] if "Myntra Payable ₹" in display_df.columns else []
