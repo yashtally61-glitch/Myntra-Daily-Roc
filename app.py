@@ -89,24 +89,89 @@ MARKETING_PCT  = 0.03
 ROYALTY_PCT    = 0.01
 GST_RATE       = 0.18
 
+REQUIRED_RATE_COLS = [
+    "Brand Name", "Category",
+    "Lower Limit Commision", "Upper Limit Commision", "Commision Charge",
+    "GT Lower Limit", "GT Upper Limit", "GT Charges",
+    "Lower Limit Fixed Fee", "Upper Limit Fixed Fee", "Fix Fee",
+]
+
 
 @st.cache_data(show_spinner=False)
 def load_slab(file_bytes: bytes):
-    """Parse Slab.xlsx → rates DataFrame + sku_map dict."""
-    wb = __import__("openpyxl").load_workbook(BytesIO(file_bytes))
+    """
+    Parse Slab.xlsx → rates DataFrame + sku_map dict.
 
-    # Rates sheet
+    FIX: the previous version did
+        rates = pd.DataFrame(rows[1:], columns=rows[0])
+    which throws
+        "Length mismatch: Expected axis has N elements, new values have M elements"
+    whenever the header row and a data row don't have the exact same
+    number of cells (e.g. a trailing blank column read by openpyxl, or a
+    stray value past the last header). We now build the header safely,
+    drop fully-empty trailing columns, and pad/truncate every data row to
+    match the header length instead of letting pandas raise.
+    """
+    wb = __import__("openpyxl").load_workbook(BytesIO(file_bytes), data_only=True)
+
+    # ---- Rates sheet -----------------------------------------------------
     ws = wb["Rates"]
     rows = list(ws.iter_rows(min_row=1, values_only=True))
-    rates = pd.DataFrame(rows[1:], columns=rows[0])
+    if not rows:
+        raise ValueError("'Rates' sheet is empty.")
+
+    header = list(rows[0])
+
+    # Drop trailing columns whose header is blank/None — these are usually
+    # stray formatting artifacts from Excel and are the #1 cause of the
+    # "Length mismatch" error.
+    while header and (header[-1] is None or str(header[-1]).strip() == ""):
+        header.pop()
+
+    n_cols = len(header)
+    if n_cols == 0:
+        raise ValueError("Could not find a valid header row in the 'Rates' sheet.")
+
+    data_rows = []
+    for r in rows[1:]:
+        r = list(r)
+        if len(r) < n_cols:
+            r = r + [None] * (n_cols - len(r))   # pad short rows
+        elif len(r) > n_cols:
+            r = r[:n_cols]                        # truncate long rows
+        # skip fully blank rows
+        if all(v is None or str(v).strip() == "" for v in r):
+            continue
+        data_rows.append(r)
+
+    rates = pd.DataFrame(data_rows, columns=header)
+    rates.columns = [str(c).strip() for c in rates.columns]
+
+    missing = [c for c in REQUIRED_RATE_COLS if c not in rates.columns]
+    if missing:
+        raise ValueError(
+            "'Rates' sheet is missing required column(s): "
+            f"{', '.join(missing)}. Found columns: {list(rates.columns)}"
+        )
+
     rates["Brand Name"] = rates["Brand Name"].astype(str).str.strip()
     rates["Category"]   = rates["Category"].astype(str).str.strip()
 
-    # Replace Sku sheet (optional – used for SKU normalisation)
+    # numeric coercion so a stray text cell can't silently break the lookups
+    numeric_cols = [
+        "Lower Limit Commision", "Upper Limit Commision", "Commision Charge",
+        "GT Lower Limit", "GT Upper Limit", "GT Charges",
+        "Lower Limit Fixed Fee", "Upper Limit Fixed Fee", "Fix Fee",
+    ]
+    for c in numeric_cols:
+        rates[c] = pd.to_numeric(rates[c], errors="coerce")
+
+    # ---- Replace Sku sheet (optional – used for SKU normalisation) -------
     sku_map = {}
     if "Replace Sku" in wb.sheetnames:
         ws2 = wb["Replace Sku"]
         for row in ws2.iter_rows(min_row=2, values_only=True):
+            row = list(row) + [None] * max(0, 5 - len(row))  # defensive pad
             if row[2] and row[4]:                     # MYNTRA SKU CODE → OMS SKU CODE
                 sku_map[str(row[2]).strip()] = str(row[4]).strip()
 
