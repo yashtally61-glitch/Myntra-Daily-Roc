@@ -2,11 +2,12 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from io import BytesIO
+from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# Page config
+# ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Myntra Reconciliation",
     page_icon="🧾",
@@ -14,134 +15,46 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Custom CSS
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
-
 html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-
-/* Sidebar */
-section[data-testid="stSidebar"] {
-    background: #0f172a;
-    border-right: 1px solid #1e293b;
-}
+section[data-testid="stSidebar"] { background: #0f172a; border-right: 1px solid #1e293b; }
 section[data-testid="stSidebar"] * { color: #f1f5f9 !important; }
 section[data-testid="stSidebar"] .stFileUploader label { color: #cbd5e1 !important; font-size: 0.78rem; }
 section[data-testid="stSidebar"] h1,
 section[data-testid="stSidebar"] h2,
 section[data-testid="stSidebar"] h3 { color: #ffffff !important; }
-section[data-testid="stSidebar"] p,
-section[data-testid="stSidebar"] span,
-section[data-testid="stSidebar"] div { color: #e2e8f0 !important; }
-section[data-testid="stSidebar"] .stMarkdown { color: #e2e8f0 !important; }
-
-/* Multiselect in sidebar */
-section[data-testid="stSidebar"] .stMultiSelect label { color: #cbd5e1 !important; }
 section[data-testid="stSidebar"] .stMultiSelect div[data-baseweb="tag"] { background: #1e40af !important; }
-section[data-testid="stSidebar"] .stMultiSelect div[data-baseweb="tag"] span { color: #ffffff !important; }
-
-/* Main background */
 .main .block-container { padding-top: 1.5rem; max-width: 1400px; }
-
-/* Metric cards */
-.metric-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    padding: 1.1rem 1.25rem;
-    box-shadow: 0 2px 6px rgba(0,0,0,.07);
-}
-.metric-label {
-    font-size: 0.72rem; font-weight: 700; color: #475569;
-    text-transform: uppercase; letter-spacing: .07em; margin-bottom: .3rem;
-}
-.metric-value {
-    font-size: 1.5rem; font-weight: 700; color: #0f172a;
-    font-family: 'JetBrains Mono', monospace;
-}
-.metric-value.positive { color: #15803d; }
-.metric-value.negative { color: #b91c1c; }
-.metric-sub { font-size: 0.72rem; color: #64748b; margin-top: .2rem; font-weight: 500; }
-
-/* Section header */
-.section-header {
-    display: flex; align-items: center; gap: .6rem;
-    font-size: 1rem; font-weight: 700; color: #0f172a;
-    border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem; margin-bottom: 1rem;
-}
-
-/* Upload hint */
-.upload-hint {
-    background: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 8px;
-    padding: .85rem 1rem;
-    font-size: .78rem;
-    color: #e2e8f0 !important;
-    margin-top: .5rem;
-    line-height: 1.8;
-}
-.upload-hint b { color: #7dd3fc !important; }
-
-/* Info box */
-.info-box {
-    background: #eff6ff;
-    border-left: 3px solid #3b82f6;
-    border-radius: 0 8px 8px 0;
-    padding: .8rem 1rem;
-    font-size: .83rem;
-    color: #1e3a5f;
-    font-weight: 500;
-}
-.info-box b { color: #1d4ed8; }
-.info-box code { background: #dbeafe; color: #1e40af; padding: .1rem .3rem; border-radius: 3px; }
-
-/* Warn box */
-.warn-box {
-    background: #fffbeb;
-    border-left: 3px solid #f59e0b;
-    border-radius: 0 8px 8px 0;
-    padding: .8rem 1rem;
-    font-size: .83rem;
-    color: #78350f;
-    font-weight: 500;
-}
-
-/* Success box */
-.success-box {
-    background: #f0fdf4;
-    border-left: 3px solid #22c55e;
-    border-radius: 0 8px 8px 0;
-    padding: .8rem 1rem;
-    font-size: .83rem;
-    color: #14532d;
-    font-weight: 500;
-}
-
-/* Page title */
-h1 { color: #0f172a !important; font-weight: 800 !important; }
-h2 { color: #1e293b !important; font-weight: 700 !important; }
-h3 { color: #1e293b !important; }
-
-/* Streamlit metric widget text */
-[data-testid="stMetricLabel"] { color: #334155 !important; font-weight: 600 !important; }
-[data-testid="stMetricValue"] { color: #0f172a !important; font-weight: 700 !important; }
-
-/* Tab text */
-.stTabs [data-baseweb="tab"] { color: #334155 !important; font-weight: 600; }
-.stTabs [data-baseweb="tab"][aria-selected="true"] { color: #1d4ed8 !important; }
-
-/* Dataframe */
-[data-testid="stDataFrame"] { border-radius: 8px; overflow: hidden; }
+.metric-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:1.1rem 1.25rem; box-shadow:0 2px 6px rgba(0,0,0,.07); }
+.metric-label { font-size:.72rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:.07em; margin-bottom:.3rem; }
+.metric-value { font-size:1.5rem; font-weight:700; color:#0f172a; font-family:'JetBrains Mono',monospace; }
+.metric-value.positive { color:#15803d; }
+.metric-value.negative { color:#b91c1c; }
+.metric-sub { font-size:.72rem; color:#64748b; margin-top:.2rem; font-weight:500; }
+.section-header { display:flex; align-items:center; gap:.6rem; font-size:1rem; font-weight:700; color:#0f172a; border-bottom:2px solid #e2e8f0; padding-bottom:.5rem; margin-bottom:1rem; }
+.upload-hint { background:#1e293b; border:1px solid #334155; border-radius:8px; padding:.85rem 1rem; font-size:.78rem; color:#e2e8f0 !important; margin-top:.5rem; line-height:1.8; }
+.upload-hint b { color:#7dd3fc !important; }
+.info-box { background:#eff6ff; border-left:3px solid #3b82f6; border-radius:0 8px 8px 0; padding:.8rem 1rem; font-size:.83rem; color:#1e3a5f; font-weight:500; }
+.info-box b { color:#1d4ed8; }
+.info-box code { background:#dbeafe; color:#1e40af; padding:.1rem .3rem; border-radius:3px; }
+.warn-box { background:#fffbeb; border-left:3px solid #f59e0b; border-radius:0 8px 8px 0; padding:.8rem 1rem; font-size:.83rem; color:#78350f; font-weight:500; }
+.success-box { background:#f0fdf4; border-left:3px solid #22c55e; border-radius:0 8px 8px 0; padding:.8rem 1rem; font-size:.83rem; color:#14532d; font-weight:500; }
+.fix-rate-badge { background:#fef3c7; border:1px solid #f59e0b; color:#92400e; padding:.15rem .5rem; border-radius:999px; font-size:.7rem; font-weight:700; }
+h1 { color:#0f172a !important; font-weight:800 !important; }
+h2 { color:#1e293b !important; font-weight:700 !important; }
+[data-testid="stMetricLabel"] { color:#334155 !important; font-weight:600 !important; }
+[data-testid="stMetricValue"] { color:#0f172a !important; font-weight:700 !important; }
+.stTabs [data-baseweb="tab"] { color:#334155 !important; font-weight:600; }
+.stTabs [data-baseweb="tab"][aria-selected="true"] { color:#1d4ed8 !important; }
 </style>
 """, unsafe_allow_html=True)
 
 
-# =============================================================================
-#  CORE RECONCILIATION LOGIC
-# =============================================================================
-
+# ═════════════════════════════════════════════════════════════════════════════
+#  CONSTANTS
+# ═════════════════════════════════════════════════════════════════════════════
 RETURN_CHARGES = 45
 MARKETING_PCT  = 0.03
 ROYALTY_PCT    = 0.01
@@ -155,117 +68,183 @@ REQUIRED_RATE_COLS = [
 ]
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+#  FILE LOADERS
+# ═════════════════════════════════════════════════════════════════════════════
+
 @st.cache_data(show_spinner=False)
 def load_slab(file_bytes: bytes):
-    wb = __import__("openpyxl").load_workbook(BytesIO(file_bytes), data_only=True)
+    """Load Slab.xlsx → rates, oms_map, yrn_map, pwn_map, closed_map."""
+    import openpyxl
+    wb = openpyxl.load_workbook(BytesIO(file_bytes), data_only=True)
 
-    # ---- Rates sheet --------------------------------------------------------
-    ws = wb["Rates"]
+    # ── Rates sheet ──────────────────────────────────────────────────────────
+    ws   = wb["Rates"]
     rows = list(ws.iter_rows(min_row=1, values_only=True))
     if not rows:
         raise ValueError("'Rates' sheet is empty.")
 
-    header = list(rows[0])
-    while header and (header[-1] is None or str(header[-1]).strip() == ""):
-        header.pop()
-
+    header = [c for c in rows[0] if c is not None and str(c).strip()]
     n_cols = len(header)
-    if n_cols == 0:
-        raise ValueError("Could not find a valid header row in the 'Rates' sheet.")
-
     data_rows = []
     for r in rows[1:]:
-        r = list(r)
-        if len(r) < n_cols:
-            r = r + [None] * (n_cols - len(r))
-        elif len(r) > n_cols:
-            r = r[:n_cols]
+        r = list(r)[:n_cols] + [None] * max(0, n_cols - len(r))
         if all(v is None or str(v).strip() == "" for v in r):
             continue
-        data_rows.append(r)
+        data_rows.append(r[:n_cols])
 
     rates = pd.DataFrame(data_rows, columns=header)
     rates.columns = [str(c).strip() for c in rates.columns]
 
     missing = [c for c in REQUIRED_RATE_COLS if c not in rates.columns]
     if missing:
-        raise ValueError(
-            f"'Rates' sheet is missing required column(s): {', '.join(missing)}. "
-            f"Found columns: {list(rates.columns)}"
-        )
+        raise ValueError(f"'Rates' sheet missing columns: {', '.join(missing)}")
 
     rates["Brand Name"] = rates["Brand Name"].astype(str).str.strip()
     rates["Category"]   = rates["Category"].astype(str).str.strip()
-
-    numeric_cols = [
-        "Lower Limit Commision", "Upper Limit Commision", "Commision Charge",
-        "GT Lower Limit", "GT Upper Limit", "GT Charges",
-        "Lower Limit Fixed Fee", "Upper Limit Fixed Fee", "Fix Fee",
-    ]
-    for c in numeric_cols:
+    for c in [c for c in REQUIRED_RATE_COLS if c not in ("Brand Name","Category")]:
         rates[c] = pd.to_numeric(rates[c], errors="coerce")
 
-    # ---- Replace Sku sheet --------------------------------------------------
-    # col[1] = YRN NUMBER, col[2] = MYNTRA SKU CODE, col[4] = OMS SKU CODE
-    oms_map = {}   # MYNTRA SKU CODE → OMS SKU CODE
-    yrn_map = {}   # YRN NUMBER      → OMS SKU CODE
+    # ── Replace Sku ──────────────────────────────────────────────────────────
+    oms_map, yrn_map = {}, {}
     if "Replace Sku" in wb.sheetnames:
-        ws2 = wb["Replace Sku"]
-        for row in ws2.iter_rows(min_row=2, values_only=True):
+        for row in wb["Replace Sku"].iter_rows(min_row=2, values_only=True):
             row = list(row) + [None] * max(0, 5 - len(row))
             if row[2] and row[4]:
                 oms_map[str(row[2]).strip()] = str(row[4]).strip()
             if row[1] and row[4]:
                 yrn_map[str(row[1]).strip()] = str(row[4]).strip()
 
-    # ---- Price We Need Excel sheet — OMS Child SKU → PWN+10% ---------------
+    # ── Price We Need ────────────────────────────────────────────────────────
     pwn_map = {}
-    pwn_sheet_name = None
     for sn in wb.sheetnames:
         if sn.strip().lower().startswith("price we need"):
-            pwn_sheet_name = sn
+            for row in wb[sn].iter_rows(min_row=2, values_only=True):
+                row = list(row) + [None] * 3
+                if row[1] and row[2] is not None:
+                    pwn_map[str(row[1]).strip()] = row[2]
             break
-    if pwn_sheet_name:
-        ws3 = wb[pwn_sheet_name]
-        for row in ws3.iter_rows(min_row=2, values_only=True):
-            row = list(row) + [None] * max(0, 3 - len(row))
-            if row[1] and row[2] is not None:
-                pwn_map[str(row[1]).strip()] = row[2]
 
-    # ---- Closed sheet — OMS Child SKU → Closed Price ------------------------
+    # ── Closed ───────────────────────────────────────────────────────────────
     closed_map = {}
     if "Closed" in wb.sheetnames:
-        ws4 = wb["Closed"]
-        for row in ws4.iter_rows(min_row=2, values_only=True):
-            row = list(row) + [None] * max(0, 3 - len(row))
+        for row in wb["Closed"].iter_rows(min_row=2, values_only=True):
+            row = list(row) + [None] * 3
             if row[1] and row[2] is not None:
                 closed_map[str(row[1]).strip()] = row[2]
 
     return rates, oms_map, yrn_map, pwn_map, closed_map
 
 
-def get_pwn_price(oms_map: dict, yrn_map: dict, pwn_map: dict, closed_map: dict,
-                  seller_sku_code: str, myntra_sku_code: str = ""):
-    key  = str(seller_sku_code).strip()
-    mkey = str(myntra_sku_code).strip()
+@st.cache_data(show_spinner=False)
+def load_fix_rate(file_bytes: bytes) -> pd.DataFrame:
+    """
+    Load Fix Rate sheet (e.g. 'Fix_Rate_sheet.xlsx').
+    Real-world column layout (confirmed from your file):
+        Brand Name | Style Id | Start Date | End Date | Recommended Price |
+        Opt-in Price | Opt-in Settlement Price | GT Charge | Seller List Price |
+        Commission | Fixed fee | Collection Cost
 
-    # Step 1: Resolve via MYNTRA SKU CODE column in Replace Sku
-    oms_sku = oms_map.get(key, key)
+    Only the columns we need are used:
+        Brand Name, Style Id, Start Date, End Date, GT Charge, Commission, Fixed fee
 
-    # Step 2: If not resolved, try Myntra SKU Code via YRN NUMBER column
-    if oms_sku == key and mkey:
-        oms_sku = yrn_map.get(mkey, oms_sku)
+    Commission here is a FLAT ₹ AMOUNT (not a %) — confirmed from sample data
+    (e.g. 48.2, 43.33, 0).
 
-    # Step 3: Check Closed sheet first (using resolved OMS SKU)
-    if oms_sku in closed_map:
-        return closed_map[oms_sku], oms_sku, "Closed"
+    Myntra Payable for fix-rate rows = SP - GT - Commission - Fixed fee
+    (GST is already embedded in these figures — no separate GST deduction.)
+    """
+    import openpyxl
+    wb = openpyxl.load_workbook(BytesIO(file_bytes), data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(min_row=1, values_only=True))
+    if not rows:
+        return pd.DataFrame()
 
-    # Step 4: Check Price We Need Excel
-    if oms_sku in pwn_map:
-        return pwn_map[oms_sku], oms_sku, "PWN"
+    header = [str(c).strip() if c is not None else "" for c in rows[0]]
+    df = pd.DataFrame(rows[1:], columns=header)
 
-    return None, oms_sku, None
+    required = ["Brand Name", "Style Id", "Start Date", "End Date",
+                "GT Charge", "Commission", "Fixed fee"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"Fix Rate sheet missing columns: {', '.join(missing)}")
 
+    # Drop fully blank rows
+    df = df.dropna(how="all").reset_index(drop=True)
+
+    df["Brand Name"] = df["Brand Name"].astype(str).str.strip()
+    df["Style Id"]   = pd.to_numeric(df["Style Id"], errors="coerce")
+    df["GT Charge"]  = pd.to_numeric(df["GT Charge"],  errors="coerce").fillna(0)
+    df["Commission"] = pd.to_numeric(df["Commission"], errors="coerce").fillna(0)
+    df["Fixed fee"]  = pd.to_numeric(df["Fixed fee"],  errors="coerce").fillna(0)
+
+    # Keep extra columns if present (useful for QA / display), but not required
+    for opt in ["Recommended Price", "Opt-in Price", "Opt-in Settlement Price",
+                "Seller List Price", "Collection Cost"]:
+        if opt in df.columns:
+            df[opt] = pd.to_numeric(df[opt], errors="coerce")
+
+    # Normalise dates
+    def _to_date(v):
+        if isinstance(v, datetime):
+            return v.date()
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        try:
+            return pd.to_datetime(v).date()
+        except Exception:
+            return None
+
+    df["Start Date"] = df["Start Date"].apply(_to_date)
+    df["End Date"]   = df["End Date"].apply(_to_date)
+
+    # Drop rows with no usable Style Id (can't be matched to an order)
+    df = df[df["Style Id"].notna()].reset_index(drop=True)
+    return df
+
+
+def get_fix_rate_row(fix_df: pd.DataFrame, brand: str, style_id, order_date):
+    """
+    Return the matching fix-rate row (as Series) or None.
+    Match on: Brand Name == brand AND Style Id == style_id
+              AND Start Date <= order_date <= End Date
+
+    A brand + style id can appear MULTIPLE times in the Fix Rate sheet with
+    different date windows (rates change week to week) — so the date filter
+    decides which window applies. If no row's window covers order_date,
+    no fix rate is used and the order falls back to the normal Slab.
+    """
+    if fix_df is None or fix_df.empty:
+        return None
+    try:
+        sid = int(float(style_id))
+    except Exception:
+        return None
+
+    sub = fix_df[(fix_df["Brand Name"] == brand) & (fix_df["Style Id"] == sid)]
+    if sub.empty:
+        return None
+
+    if order_date is not None:
+        dated = sub[
+            (sub["Start Date"].notna()) & (sub["End Date"].notna()) &
+            (sub["Start Date"] <= order_date) & (sub["End Date"] >= order_date)
+        ]
+        if not dated.empty:
+            return dated.iloc[0]
+        # Fall back to rows without a date window at all
+        undated = sub[sub["Start Date"].isna() | sub["End Date"].isna()]
+        if not undated.empty:
+            return undated.iloc[0]
+        return None
+
+    return sub.iloc[0]
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  SLAB HELPERS
+# ═════════════════════════════════════════════════════════════════════════════
 
 def _lookup(subset: pd.DataFrame, lo_col: str, hi_col: str, val: float):
     m = subset[(subset[lo_col] <= val) & (subset[hi_col] > val)]
@@ -274,13 +253,15 @@ def _lookup(subset: pd.DataFrame, lo_col: str, hi_col: str, val: float):
     return m.iloc[0] if not m.empty else None
 
 
-def get_charges(rates: pd.DataFrame, brand: str, cat: str, SP: float):
+def get_charges_from_slab(rates: pd.DataFrame, brand: str, cat: str, SP: float):
     """
-    Returns (GT, V, comm_rate, comm_amt, fixed_fee) or all None on miss.
-    1. GT      = slab lookup by SP
-    2. V       = SP - GT
-    3. comm    = rate(V) * V
-    4. fixed   = slab lookup by SP
+    Normal slab lookup (used when no Fix Rate match exists).
+    Returns (GT, V, comm_rate, comm_amt, fixed_fee) or all-None on miss.
+    Formula:
+      1. GT   = slab[SP]
+      2. V    = SP - GT
+      3. comm = rate(V) × V   ← rate looked up by V not SP
+      4. fee  = slab[SP]
     """
     sub = rates[
         (rates["Brand Name"] == brand) &
@@ -307,8 +288,37 @@ def get_charges(rates: pd.DataFrame, brand: str, cat: str, SP: float):
     return GT, V, comm_rate, comm_amt, fixed_fee
 
 
-def reconcile(rates: pd.DataFrame, df: pd.DataFrame, oms_map: dict, yrn_map: dict,
-              pwn_map: dict, closed_map: dict, brand_filter=None):
+def get_pwn_price(oms_map, yrn_map, pwn_map, closed_map, seller_sku, myntra_sku=""):
+    key  = str(seller_sku).strip()
+    mkey = str(myntra_sku).strip()
+    oms_sku = oms_map.get(key, key)
+    if oms_sku == key and mkey:
+        oms_sku = yrn_map.get(mkey, oms_sku)
+    if oms_sku in closed_map:
+        return closed_map[oms_sku], oms_sku, "Closed"
+    if oms_sku in pwn_map:
+        return pwn_map[oms_sku], oms_sku, "PWN"
+    return None, oms_sku, None
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  CORE RECONCILIATION
+# ═════════════════════════════════════════════════════════════════════════════
+
+def reconcile(rates, df, oms_map, yrn_map, pwn_map, closed_map,
+              fix_df=None, report_date=None, brand_filter=None):
+    """
+    Run reconciliation on a Myntra seller-orders DataFrame.
+
+    PRIORITY (per order row):
+      1. Fix Rate sheet match (Brand + Style Id + date window)
+           → GT, Commission (flat ₹), Fixed Fee taken directly from that sheet.
+           → Myntra Payable = SP - GT - Commission - Fixed Fee  (GST embedded, no separate deduction)
+           → rate_source = "Fix Rate"
+      2. Else: normal Slab lookup (Brand + Category + SP range)
+           → rate_source = "Slab"
+      3. Else: no match → flagged as unmatched for manual review
+    """
     df = df.copy()
     df["brand"]        = df["brand"].astype(str).str.strip()
     df["article type"] = df["article type"].astype(str).str.strip()
@@ -318,36 +328,64 @@ def reconcile(rates: pd.DataFrame, df: pd.DataFrame, oms_map: dict, yrn_map: dic
 
     records = []
     for _, row in df.iterrows():
-        SP    = float(row["final amount"])
-        brand = row["brand"]
-        cat   = row["article type"]
+        SP     = float(row["final amount"])
+        brand  = row["brand"]
+        cat    = row["article type"]
+        sid    = row.get("style id", None)
 
-        GT, V, comm_rate, comm_amt, fixed_fee = get_charges(rates, brand, cat, SP)
-        pwn_price, oms_sku, pwn_source = get_pwn_price(
-            oms_map, yrn_map, pwn_map, closed_map,
-            row.get("seller sku code", ""),
-            row.get("myntra sku code", "")
-        )
+        # ── 1. Try Fix Rate first (style-id based, per brand) ───────────────
+        fix_row = get_fix_rate_row(fix_df, brand, sid, report_date)
 
-        if GT is None:
-            rec = dict(
-                _GT=None, _V=None, _comm_rate=None, _comm_amt=None,
-                _fixed_fee=None, _total_charges=None, _gst=None,
-                _myntra_payable=None, _marketing=None, _royalty=None,
-                _slab_ok=False,
-            )
-        else:
+        if fix_row is not None:
+            GT        = float(fix_row["GT Charge"])
+            comm_amt  = float(fix_row["Commission"])   # FLAT ₹ amount
+            fixed_fee = float(fix_row["Fixed fee"])
+            V         = round(SP - GT, 2)
             total_ch   = round(comm_amt + GT + fixed_fee, 2)
-            gst        = round((total_ch - GT) * GST_RATE, 2)
-            myntra_pay = round(SP - total_ch - gst, 2)
+            myntra_pay = round(SP - total_ch, 2)        # ← NO separate GST (already embedded)
+            gst        = 0.0
             marketing  = round(SP * MARKETING_PCT, 2)
             royalty    = round(V  * ROYALTY_PCT, 2)
             rec = dict(
-                _GT=GT, _V=V, _comm_rate=comm_rate, _comm_amt=comm_amt,
-                _fixed_fee=fixed_fee, _total_charges=total_ch, _gst=gst,
-                _myntra_payable=myntra_pay, _marketing=marketing,
-                _royalty=royalty, _slab_ok=True,
+                _GT=GT, _V=V, _comm_rate=None, _comm_amt=comm_amt,
+                _fixed_fee=fixed_fee, _total_charges=total_ch,
+                _gst=gst, _myntra_payable=myntra_pay,
+                _marketing=marketing, _royalty=royalty,
+                _slab_ok=True, _rate_source="Fix Rate",
             )
+
+        else:
+            # ── 2. Normal slab lookup ────────────────────────────────────────
+            GT, V, comm_rate, comm_amt, fixed_fee = get_charges_from_slab(
+                rates, brand, cat, SP)
+
+            if GT is None:
+                rec = dict(
+                    _GT=None, _V=None, _comm_rate=None, _comm_amt=None,
+                    _fixed_fee=None, _total_charges=None, _gst=None,
+                    _myntra_payable=None, _marketing=None, _royalty=None,
+                    _slab_ok=False, _rate_source="No Match",
+                )
+            else:
+                total_ch   = round(comm_amt + GT + fixed_fee, 2)
+                gst        = round((total_ch - GT) * GST_RATE, 2)
+                myntra_pay = round(SP - total_ch - gst, 2)
+                marketing  = round(SP * MARKETING_PCT, 2)
+                royalty    = round(V  * ROYALTY_PCT, 2)
+                rec = dict(
+                    _GT=GT, _V=V, _comm_rate=comm_rate, _comm_amt=comm_amt,
+                    _fixed_fee=fixed_fee, _total_charges=total_ch,
+                    _gst=gst, _myntra_payable=myntra_pay,
+                    _marketing=marketing, _royalty=royalty,
+                    _slab_ok=True, _rate_source="Slab",
+                )
+
+        # PWN price lookup (unchanged, independent of rate source)
+        pwn_price, oms_sku, pwn_source = get_pwn_price(
+            oms_map, yrn_map, pwn_map, closed_map,
+            row.get("seller sku code", ""),
+            row.get("myntra sku code", ""),
+        )
         rec["_pwn"]        = pwn_price
         rec["_oms_sku"]    = oms_sku
         rec["_pwn_source"] = pwn_source
@@ -357,25 +395,26 @@ def reconcile(rates: pd.DataFrame, df: pd.DataFrame, oms_map: dict, yrn_map: dic
     return pd.concat([df.reset_index(drop=True), enrich.reset_index(drop=True)], axis=1)
 
 
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
 #  EXCEL EXPORT
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
 
 HEADERS = [
     "order release id", "order line id", "STYLE ID", "Myntra SKU Code", "SKU",
-    "Original SKU", "Article Type", "MRP", "PWN+10%", "Marketing Charges 3%",
-    "Return Charges", "Royalty", "Total Amount", "Commission Amount",
-    "GT Charges", "Fixed Fee", "Total Charges", "GST Amount",
-    "Myntra Payble Amount", "Rebate", "Diffrence", "Selling Price",
-    "Selling Price -GT Price", "Date", "Brand", "Order Status", "Price Source",
+    "Original SKU", "Article Type", "MRP", "PWN+10%",
+    "Marketing Charges 3%", "Return Charges", "Royalty", "Total Amount",
+    "Commission Amount", "GT Charges", "Fixed Fee",
+    "Total Charges", "GST Amount", "Myntra Payble Amount",
+    "Rebate", "Diffrence", "Selling Price", "Selling Price -GT Price",
+    "Date", "Brand", "Order Status", "Rate Source",
 ]
-
 COL_W = [18,15,12,24,24,22,14,8,10,18,14,10,13,17,11,10,13,11,18,8,11,13,18,13,12,12,12]
 
-_H  = PatternFill("solid", fgColor="1F4E79")
-_Y  = PatternFill("solid", fgColor="FCE4D6")
-_B  = PatternFill("solid", fgColor="DEEAF1")
-_G  = PatternFill("solid", fgColor="E2EFDA")
+_HF = PatternFill("solid", fgColor="1F4E79")   # header navy
+_YF = PatternFill("solid", fgColor="FCE4D6")   # orange – needs manual entry
+_BF = PatternFill("solid", fgColor="DEEAF1")   # blue   – computed
+_GF = PatternFill("solid", fgColor="E2EFDA")   # green  – payable
+_AF = PatternFill("solid", fgColor="FFF9E6")   # amber  – fix rate row
 _A1 = PatternFill("solid", fgColor="EBF3FA")
 _A2 = PatternFill("solid", fgColor="FFFFFF")
 _thin = Side(style="thin", color="B8CCE4")
@@ -392,7 +431,7 @@ def _cell(ws, r, c, val, fill, font=None, fmt=None, align="center"):
     return cell
 
 
-def build_excel(result_df: pd.DataFrame) -> bytes:
+def build_excel(result_df: pd.DataFrame, report_date_str: str = "") -> bytes:
     wb         = Workbook()
     all_brands = sorted(result_df["brand"].unique())
 
@@ -400,20 +439,23 @@ def build_excel(result_df: pd.DataFrame) -> bytes:
         bdf = result_df[result_df["brand"] == brand].reset_index(drop=True)
         ws  = wb.create_sheet(title=brand[:31])
 
-        hfont = Font(bold=True, color="FFFFFF", size=10, name="Calibri")
-        nfont = Font(size=9, name="Calibri")
-        ofont = Font(size=9, name="Calibri", italic=True, color="C55A11")
+        hfont = Font(bold=True, color="FFFFFF",  size=10, name="Calibri")
+        nfont = Font(size=9,  name="Calibri")
+        ofont = Font(size=9,  name="Calibri", italic=True, color="C55A11")
         gfont = Font(bold=True, size=9, name="Calibri", color="375623")
+        ffont = Font(bold=True, size=9, name="Calibri", color="7B4F00")   # fix-rate amber
 
         for ci, (h, w) in enumerate(zip(HEADERS, COL_W), 1):
-            _cell(ws, 1, ci, h, _H, hfont)
+            _cell(ws, 1, ci, h, _HF, hfont)
             ws.column_dimensions[get_column_letter(ci)].width = w
         ws.row_dimensions[1].height = 36
 
         for ri, (_, row) in enumerate(bdf.iterrows(), 2):
-            alt = _A1 if ri % 2 == 0 else _A2
-            SP  = row.get("final amount", 0)
-            V   = row.get("_V")
+            is_fix = row.get("_rate_source") == "Fix Rate"
+            alt    = (_AF if is_fix else (_A1 if ri % 2 == 0 else _A2))
+            SP     = row.get("final amount", 0)
+            V      = row.get("_V")
+            gst_v  = row.get("_gst")
 
             vals = [
                 row.get("order release id", ""),
@@ -424,116 +466,120 @@ def build_excel(result_df: pd.DataFrame) -> bytes:
                 row.get("_oms_sku", ""),
                 row.get("article type", ""),
                 row.get("total mrp", ""),
-                row.get("_pwn"),
-                row.get("_marketing"),
-                RETURN_CHARGES,
-                row.get("_royalty"),
-                None,                       # M: Total Amount (formula)
-                row.get("_comm_amt"),
-                row.get("_GT"),
-                row.get("_fixed_fee"),
-                row.get("_total_charges"),
-                row.get("_gst"),
-                row.get("_myntra_payable"),
-                0,                          # T: Rebate
-                None,                       # U: Difference (formula)
-                SP,
-                V,
-                "25-Jun-2026",
-                row.get("brand", ""),
-                row.get("order status", ""),
-                row.get("_pwn_source") or "Manual",
+                row.get("_pwn"),               # I  PWN+10%
+                row.get("_marketing"),          # J  Marketing 3%
+                RETURN_CHARGES,                 # K  Return Charges
+                row.get("_royalty"),            # L  Royalty
+                None,                           # M  Total Amount  (formula)
+                row.get("_comm_amt"),           # N  Commission
+                row.get("_GT"),                 # O  GT Charges
+                row.get("_fixed_fee"),          # P  Fixed Fee
+                row.get("_total_charges"),      # Q  Total Charges
+                gst_v if gst_v else None,       # R  GST Amount
+                row.get("_myntra_payable"),     # S  Myntra Payable
+                0,                              # T  Rebate
+                None,                           # U  Difference   (formula)
+                SP,                             # V  Selling Price
+                V,                              # W  SP-GT
+                report_date_str or "—",         # X  Date
+                row.get("brand", ""),           # Y  Brand
+                row.get("order status", ""),    # Z  Order Status
+                row.get("_rate_source", ""),    # AA Rate Source
             ]
 
-            num_cols = {10,11,12,13,14,15,16,17,18,19,20,21,22,23}
+            num_ci = {10,11,12,13,14,15,16,17,18,19,20,21,22,23}
+            row_font = ffont if is_fix else nfont
+
             for ci, val in enumerate(vals, 1):
-                if ci == 9:
-                    fill_h = alt if val is not None else _Y
-                    font_h = nfont if val is not None else ofont
+                if ci == 9:                           # PWN
+                    fill_h = alt if val is not None else _YF
+                    font_h = row_font if val is not None else ofont
                     _cell(ws, ri, ci, val, fill_h, font_h,
                           fmt="#,##0.00" if val is not None else None)
-                elif ci == 19:
-                    _cell(ws, ri, ci, val, _G, gfont,
+                elif ci == 19:                        # Myntra Payable
+                    _cell(ws, ri, ci, val, _GF, gfont,
                           fmt="#,##0.00" if val is not None else None)
-                elif ci == 21:
-                    _cell(ws, ri, ci, None, _B, nfont)
-                elif ci == 13:
-                    _cell(ws, ri, ci, None, alt, nfont)
+                elif ci == 21:                        # Difference (formula)
+                    _cell(ws, ri, ci, None, _BF, nfont)
+                elif ci == 13:                        # Total Amount (formula)
+                    _cell(ws, ri, ci, None, alt, row_font)
+                elif ci == 27:                        # Rate Source badge
+                    src_fill = _AF if is_fix else _A2
+                    src_font = ffont if is_fix else nfont
+                    _cell(ws, ri, ci, val, src_fill, src_font)
                 else:
-                    fmt = "#,##0.00" if ci in num_cols else (
-                          "#,##0"    if ci == 8 else None)
-                    _cell(ws, ri, ci, val, alt, nfont, fmt)
+                    fmt = "#,##0.00" if ci in num_ci else ("#,##0" if ci == 8 else None)
+                    _cell(ws, ri, ci, val, alt, row_font, fmt)
 
-            m = ws.cell(row=ri, column=13)
-            m.value = f'=IF(I{ri}="","",K{ri}+J{ri}+I{ri}+L{ri})'
-            m.number_format = "#,##0.00"
-
-            u = ws.cell(row=ri, column=21)
-            u.value = f'=IF(I{ri}="","",S{ri}-M{ri}+T{ri})'
-            u.number_format = "#,##0.00"
+            # Excel formulas
+            ws.cell(row=ri, column=13).value          = f'=IF(I{ri}="","",K{ri}+J{ri}+I{ri}+L{ri})'
+            ws.cell(row=ri, column=13).number_format  = "#,##0.00"
+            ws.cell(row=ri, column=21).value          = f'=IF(I{ri}="","",S{ri}-M{ri}+T{ri})'
+            ws.cell(row=ri, column=21).number_format  = "#,##0.00"
 
         ws.freeze_panes = "A2"
         ws.auto_filter.ref = f"A1:{get_column_letter(len(HEADERS))}1"
 
+        # Legend note
         nr = len(bdf) + 3
-        note = ws.cell(row=nr, column=1,
-            value="PWN+10% (Column I) auto-filled via Replace Sku → Price We Need / Closed lookup. "
-                  "Orange cells = no SKU/price match found — fill manually.")
-        note.font  = Font(bold=True, italic=True, size=9, color="C55A11", name="Calibri")
-        note.fill  = PatternFill("solid", fgColor="FFF2CC")
+        note_text = (
+            "🟡 Amber rows = Fix Rate applied (GT/Commission/Fixed Fee from Fix Rate sheet, matched by Brand+Style Id, GST embedded). "
+            "⬜ White/Blue rows = normal slab lookup. "
+            "Orange PWN cells = fill manually."
+        )
+        n_cell = ws.cell(row=nr, column=1, value=note_text)
+        n_cell.font  = Font(bold=True, italic=True, size=9, color="7B4F00", name="Calibri")
+        n_cell.fill  = PatternFill("solid", fgColor="FFF9E6")
         ws.merge_cells(f"A{nr}:{get_column_letter(len(HEADERS))}{nr}")
 
-    # Summary sheet
-    ws_sum = wb.create_sheet(title="Summary", index=0)
-    sum_headers = ["Brand", "Orders", "Total Selling Price",
-                   "Total GT Charges", "Total Commission",
-                   "Total Fixed Fee", "Total Charges",
-                   "Total GST", "Total Myntra Payable"]
-    sum_widths  = [14, 8, 20, 16, 16, 14, 14, 12, 20]
+    # ── Summary sheet ────────────────────────────────────────────────────────
+    ws_s = wb.create_sheet(title="Summary", index=0)
+    sh   = ["Brand","Orders","Fix Rate Orders","Selling Price",
+            "GT Charges","Commission","Fixed Fee","Total Charges",
+            "GST","Myntra Payable"]
+    sw   = [14,8,14,18,14,14,12,14,10,18]
+    hf   = Font(bold=True, color="FFFFFF", size=10, name="Calibri")
+    for ci,(h,w) in enumerate(zip(sh,sw),1):
+        _cell(ws_s, 1, ci, h, _HF, hf)
+        ws_s.column_dimensions[get_column_letter(ci)].width = w
+    ws_s.row_dimensions[1].height = 30
 
-    hfont = Font(bold=True, color="FFFFFF", size=10, name="Calibri")
-    for ci, (h, w) in enumerate(zip(sum_headers, sum_widths), 1):
-        _cell(ws_sum, 1, ci, h, _H, hfont)
-        ws_sum.column_dimensions[get_column_letter(ci)].width = w
-    ws_sum.row_dimensions[1].height = 30
-
-    grand = {k: 0.0 for k in ["sp","gt","comm","ff","tc","gst","pay"]}
+    grand = {k:0.0 for k in ["sp","gt","cm","ff","tc","gst","pay","fix_n"]}
     grand["n"] = 0
 
     for ri, brand in enumerate(all_brands, 2):
-        bdf = result_df[result_df["brand"] == brand]
-        ok  = bdf[bdf["_slab_ok"] == True]
-        n   = len(bdf)
-        sp  = round(bdf["final amount"].sum(), 2)
-        gt  = round(ok["_GT"].sum(), 2)
-        cm  = round(ok["_comm_amt"].sum(), 2)
-        ff  = round(ok["_fixed_fee"].sum(), 2)
-        tc  = round(ok["_total_charges"].sum(), 2)
-        gst = round(ok["_gst"].sum(), 2)
-        pay = round(ok["_myntra_payable"].sum(), 2)
+        bdf  = result_df[result_df["brand"] == brand]
+        ok   = bdf[bdf["_slab_ok"] == True]
+        fix_n = (bdf["_rate_source"] == "Fix Rate").sum()
+        n    = len(bdf)
+        sp   = round(bdf["final amount"].sum(), 2)
+        gt   = round(ok["_GT"].sum(), 2)
+        cm   = round(ok["_comm_amt"].sum(), 2)
+        ff   = round(ok["_fixed_fee"].sum(), 2)
+        tc   = round(ok["_total_charges"].sum(), 2)
+        gst  = round(ok["_gst"].sum(), 2)
+        pay  = round(ok["_myntra_payable"].sum(), 2)
 
-        alt = _A1 if ri % 2 == 0 else _A2
+        alt = _A1 if ri%2==0 else _A2
         nf  = Font(size=9, name="Calibri")
         bf  = Font(bold=True, size=9, name="Calibri")
-        for ci, v in enumerate([brand,n,sp,gt,cm,ff,tc,gst,pay], 1):
-            fmt = "#,##0.00" if ci > 2 else None
-            _cell(ws_sum, ri, ci, v, alt, bf if ci == 1 else nf, fmt)
+        for ci,v in enumerate([brand,n,fix_n,sp,gt,cm,ff,tc,gst,pay],1):
+            fmt = "#,##0.00" if ci > 3 else None
+            _cell(ws_s, ri, ci, v, alt, bf if ci==1 else nf, fmt)
 
-        for k, v in zip(["n","sp","gt","comm","ff","tc","gst","pay"],
-                         [n, sp, gt, cm, ff, tc, gst, pay]):
+        for k,v in zip(["n","sp","gt","cm","ff","tc","gst","pay","fix_n"],
+                        [n,sp,gt,cm,ff,tc,gst,pay,fix_n]):
             grand[k] += v
 
-    gr = len(all_brands) + 2
-    gf = Font(bold=True, color="FFFFFF", size=10, name="Calibri")
-    gv = [
-        "GRAND TOTAL", grand["n"],
-        round(grand["sp"],2), round(grand["gt"],2), round(grand["comm"],2),
-        round(grand["ff"],2), round(grand["tc"],2), round(grand["gst"],2),
-        round(grand["pay"],2),
-    ]
-    for ci, v in enumerate(gv, 1):
-        fmt = "#,##0.00" if ci > 2 else None
-        _cell(ws_sum, gr, ci, v, _H, gf, fmt)
+    gr = len(all_brands)+2
+    gf2= Font(bold=True, color="FFFFFF", size=10, name="Calibri")
+    gv = ["GRAND TOTAL", grand["n"], grand["fix_n"],
+          round(grand["sp"],2), round(grand["gt"],2), round(grand["cm"],2),
+          round(grand["ff"],2), round(grand["tc"],2), round(grand["gst"],2),
+          round(grand["pay"],2)]
+    for ci,v in enumerate(gv,1):
+        fmt = "#,##0.00" if ci>3 else None
+        _cell(ws_s, gr, ci, v, _HF, gf2, fmt)
 
     if "Sheet" in wb.sheetnames:
         del wb["Sheet"]
@@ -543,26 +589,38 @@ def build_excel(result_df: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
 #  STREAMLIT UI
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
 
 with st.sidebar:
-    st.markdown("## Myntra Recon")
+    st.markdown("## 🧾 Myntra Recon")
     st.markdown("---")
 
-    st.markdown("**Step 1 - Upload Slab File**")
+    st.markdown("**① Slab File**")
     slab_file = st.file_uploader(
-        "Slab.xlsx (Rates + Replace Sku sheets)",
+        "Slab.xlsx  (Rates + Replace Sku)",
         type=["xlsx"], key="slab",
-        help="Must contain a 'Rates' sheet with Brand Name, Category, slab limits."
     )
 
-    st.markdown("**Step 2 - Upload Orders CSV**")
+    st.markdown("**② Orders CSV**")
     csv_file = st.file_uploader(
         "Seller Orders Report (.csv)",
         type=["csv"], key="csv",
-        help="Myntra Seller Orders export with brand, article type, final amount, seller price."
+    )
+
+    st.markdown("**③ Fix Rate Sheet** *(optional)*")
+    fix_file = st.file_uploader(
+        "Fix_Rate_sheet.xlsx",
+        type=["xlsx"], key="fix",
+        help="Brand + Style ID based fixed GT/Commission/Fee overrides, matched by date window."
+    )
+
+    st.markdown("**Report Date**")
+    report_date_input = st.date_input(
+        "Order date (for Fix Rate date range filter)",
+        value=datetime.today().date(),
+        help="Used to match Fix Rate rows where Start Date ≤ date ≤ End Date."
     )
 
     st.markdown("---")
@@ -574,273 +632,258 @@ with st.sidebar:
             csv_file.seek(0)
             _df_tmp["brand"] = _df_tmp["brand"].astype(str).str.strip()
             all_b = sorted(_df_tmp["brand"].unique().tolist())
-            brand_filter = st.multiselect(
-                "Filter by Brand",
-                options=all_b,
-                default=all_b,
-                help="Select which brands to reconcile."
-            )
+            brand_filter = st.multiselect("Filter by Brand", options=all_b, default=all_b)
         except Exception:
             pass
 
     st.markdown("---")
     st.markdown("""
 <div class="upload-hint">
-<b>Formula used:</b><br>
-- GT = slab lookup by SP<br>
-- V = SP - GT<br>
-- Commission = rate(V) * V<br>
-- Fixed Fee = slab lookup by SP<br>
-- Total Charges = Comm + GT + Fee<br>
-- GST = (Total - GT) * 18%<br>
-- Myntra Payable = SP - TC - GST<br>
-- Marketing = SP * 3%<br>
-- Royalty = V * 1%
+<b>Priority per order:</b><br>
+1. Fix Rate (Brand + Style ID + Date)<br>
+2. Slab (Brand + Category + SP range)<br><br>
+<b>Fix Rate formula:</b><br>
+Payable = SP − GT − Comm − Fee<br>
+(GST embedded, no separate deduction)<br><br>
+<b>Slab formula:</b><br>
+V = SP − GT<br>
+Comm = rate(V) × V<br>
+GST = (Comm + Fee) × 18%<br>
+Payable = SP − TC − GST
 </div>
 """, unsafe_allow_html=True)
 
 
-# Main area
+# ── Main ──────────────────────────────────────────────────────────────────────
 st.markdown("## Myntra Seller Reconciliation")
-st.markdown("Upload your **Slab** and **Orders CSV** in the sidebar to begin.")
 
 if not slab_file or not csv_file:
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("""
-<div class="info-box">
-<b>Step 1 - Slab.xlsx</b><br>
-Your commission/GT/fixed-fee rate table. Must have a <code>Rates</code> sheet with:<br>
-Brand Name - Category - slab limits (commission, GT, fixed fee)
-</div>""", unsafe_allow_html=True)
-    with col2:
-        st.markdown("""
-<div class="info-box">
-<b>Step 2 - Orders CSV</b><br>
-Myntra Seller Orders export. Key columns needed:<br>
-<code>brand</code> - <code>article type</code> - <code>final amount</code> - <code>seller price</code>
-</div>""", unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("""<div class="info-box"><b>Step 1 – Slab.xlsx</b><br>
+Commission/GT/Fixed-fee rate table with a <code>Rates</code> sheet.</div>""",
+            unsafe_allow_html=True)
+    with c2:
+        st.markdown("""<div class="info-box"><b>Step 2 – Orders CSV</b><br>
+Myntra Seller Orders export with <code>brand</code>, <code>article type</code>,
+<code>final amount</code>, <code>style id</code>.</div>""",
+            unsafe_allow_html=True)
     st.stop()
 
-
-# Load data
-with st.spinner("Loading slab rates..."):
+# Load
+with st.spinner("Loading slab rates…"):
     try:
         rates, oms_map, yrn_map, pwn_map, closed_map = load_slab(slab_file.read())
     except Exception as e:
-        st.error(f"Could not read Slab file: {e}")
-        st.stop()
+        st.error(f"❌ Slab file error: {e}"); st.stop()
 
-with st.spinner("Reading orders..."):
+fix_df = None
+if fix_file:
+    with st.spinner("Loading fix rates…"):
+        try:
+            fix_df = load_fix_rate(fix_file.read())
+            fix_count = len(fix_df)
+            n_brand_style = fix_df[["Brand Name","Style Id"]].drop_duplicates().shape[0] if not fix_df.empty else 0
+            st.sidebar.success(f"✅ Fix Rate loaded — {fix_count} rows, {n_brand_style} unique Brand+Style combos")
+        except Exception as e:
+            st.warning(f"Fix Rate file could not be loaded: {e}")
+
+with st.spinner("Reading orders…"):
     try:
         orders_df = pd.read_csv(csv_file)
         orders_df["brand"]        = orders_df["brand"].astype(str).str.strip()
         orders_df["article type"] = orders_df["article type"].astype(str).str.strip()
         orders_df["final amount"] = pd.to_numeric(orders_df["final amount"], errors="coerce").fillna(0)
         orders_df["seller price"] = pd.to_numeric(orders_df["seller price"], errors="coerce").fillna(0)
+        orders_df["style id"]     = pd.to_numeric(orders_df["style id"],     errors="coerce")
     except Exception as e:
-        st.error(f"Could not read CSV: {e}")
-        st.stop()
+        st.error(f"❌ CSV error: {e}"); st.stop()
 
-
-# Run reconciliation
-with st.spinner("Reconciling..."):
-    result = reconcile(rates, orders_df, oms_map, yrn_map, pwn_map, closed_map,
-                       brand_filter if brand_filter else None)
+# Reconcile
+with st.spinner("Reconciling…"):
+    result = reconcile(
+        rates, orders_df, oms_map, yrn_map, pwn_map, closed_map,
+        fix_df=fix_df,
+        report_date=report_date_input,
+        brand_filter=brand_filter if brand_filter else None,
+    )
 
 ok_df  = result[result["_slab_ok"] == True]
 bad_df = result[result["_slab_ok"] == False]
+fix_rows = (result["_rate_source"] == "Fix Rate").sum()
 
-
-# KPI row
+# ── KPIs ──────────────────────────────────────────────────────────────────────
 total_orders  = len(result)
 total_sp      = result["final amount"].sum()
 total_payable = ok_df["_myntra_payable"].sum()
-total_charges = ok_df["_total_charges"].sum()
-total_gst     = ok_df["_gst"].sum()
-unmatched     = len(bad_df)
+total_tc_gst  = ok_df["_total_charges"].sum() + ok_df["_gst"].sum()
 pwn_found     = result["_pwn"].notna().sum()
-pwn_missing   = total_orders - pwn_found
+unmatched     = len(bad_df)
 
 cols = st.columns(6)
-kpi_data = [
-    ("Total Orders",         f"{total_orders:,}",                None,       "orders in report"),
-    ("Total Selling Price",  f"Rs {total_sp:,.0f}",              None,       "sum of final amount"),
-    ("Total Myntra Payable", f"Rs {total_payable:,.0f}",         None,       "after all deductions"),
-    ("Total Charges + GST",  f"Rs {total_charges+total_gst:,.0f}", None,     "platform fees"),
-    ("PWN Price Matched",    f"{pwn_found}/{total_orders}",
-     "positive" if pwn_missing == 0 else "negative",
-     "via Replace Sku → Price We Need / Closed"),
+kpis = [
+    ("Total Orders",         f"{total_orders:,}",                None,        "orders in report"),
+    ("Total Selling Price",  f"₹{total_sp:,.0f}",               None,        "sum of final amount"),
+    ("Total Myntra Payable", f"₹{total_payable:,.0f}",          None,        "after all deductions"),
+    ("Total Charges + GST",  f"₹{total_tc_gst:,.0f}",          None,        "platform fees"),
+    ("Fix Rate Applied",     f"{fix_rows}/{total_orders}",
+     "positive" if fix_rows > 0 else None,                                   "style-level overrides"),
     ("Unmatched Rows",       f"{unmatched}",
-     "negative" if unmatched > 0 else "positive",
-     "no slab found"),
+     "negative" if unmatched > 0 else "positive",                            "no slab / fix rate found"),
 ]
-for col, (label, value, cls, sub) in zip(cols, kpi_data):
+for col, (label, value, cls, sub) in zip(cols, kpis):
     with col:
-        st.markdown(f"""
-<div class="metric-card">
+        st.markdown(f"""<div class="metric-card">
   <div class="metric-label">{label}</div>
   <div class="metric-value {cls or ''}">{value}</div>
   <div class="metric-sub">{sub}</div>
 </div>""", unsafe_allow_html=True)
 
+if fix_rows > 0:
+    st.markdown(f"""<br><div class="warn-box">
+🔒 <b>{fix_rows} orders</b> used <b>Fix Rate</b> (style-level override, matched by Brand + Style ID + Date).
+For these rows: GT/Commission/Fixed Fee come from the Fix Rate sheet and GST is already embedded —
+no separate GST is deducted. All other orders use normal slab lookup.
+</div>""", unsafe_allow_html=True)
+
 st.markdown("<br>", unsafe_allow_html=True)
 
-
-# Brand summary table
-st.markdown('<div class="section-header">Brand Summary</div>', unsafe_allow_html=True)
+# ── Brand summary ─────────────────────────────────────────────────────────────
+st.markdown('<div class="section-header">📊 Brand Summary</div>', unsafe_allow_html=True)
 
 summary_rows = []
 for brand in sorted(result["brand"].unique()):
-    bdf = result[result["brand"] == brand]
-    bok = bdf[bdf["_slab_ok"] == True]
+    bdf  = result[result["brand"] == brand]
+    bok  = bdf[bdf["_slab_ok"] == True]
+    fx_n = (bdf["_rate_source"] == "Fix Rate").sum()
     summary_rows.append({
-        "Brand":              brand,
-        "Orders":             len(bdf),
-        "Selling Price (Rs)": round(bdf["final amount"].sum(), 2),
-        "GT Charges (Rs)":    round(bok["_GT"].sum(), 2),
-        "Commission (Rs)":    round(bok["_comm_amt"].sum(), 2),
-        "Fixed Fee (Rs)":     round(bok["_fixed_fee"].sum(), 2),
-        "Total Charges (Rs)": round(bok["_total_charges"].sum(), 2),
-        "GST (Rs)":           round(bok["_gst"].sum(), 2),
-        "Myntra Payable (Rs)":round(bok["_myntra_payable"].sum(), 2),
+        "Brand":                brand,
+        "Orders":               len(bdf),
+        "Fix Rate Orders":      int(fx_n),
+        "Selling Price (₹)":    round(bdf["final amount"].sum(), 2),
+        "GT Charges (₹)":       round(bok["_GT"].sum(), 2),
+        "Commission (₹)":       round(bok["_comm_amt"].sum(), 2),
+        "Fixed Fee (₹)":        round(bok["_fixed_fee"].sum(), 2),
+        "Total Charges (₹)":    round(bok["_total_charges"].sum(), 2),
+        "GST (₹)":              round(bok["_gst"].sum(), 2),
+        "Myntra Payable (₹)":   round(bok["_myntra_payable"].sum(), 2),
     })
 
 sum_df = pd.DataFrame(summary_rows)
 st.dataframe(
     sum_df.style
-        .format({c: "{:,.2f}" for c in sum_df.columns if "(Rs)" in c}, na_rep="")
+        .format({c: "{:,.2f}" for c in sum_df.columns if "₹" in c}, na_rep="")
         .set_properties(**{"text-align": "center"}),
     use_container_width=True, hide_index=True,
 )
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-
-# Per-brand detail tabs
+# ── Order-level tabs ──────────────────────────────────────────────────────────
 brands_in_result = sorted(result["brand"].unique().tolist())
 
 if brands_in_result:
-    st.markdown('<div class="section-header">Order-Level Detail</div>', unsafe_allow_html=True)
-    tabs = st.tabs([f"  {b}  " for b in brands_in_result] + ["Unmatched"])
+    st.markdown('<div class="section-header">📋 Order-Level Detail</div>', unsafe_allow_html=True)
+    tabs = st.tabs([f"  {b}  " for b in brands_in_result] + ["⚠️ Unmatched"])
 
     DISPLAY_COLS = {
         "order release id": "Order ID",
         "order line id":    "Line ID",
+        "style id":         "Style ID",
         "seller sku code":  "SKU",
-        "_oms_sku":         "Original SKU",
         "article type":     "Category",
         "order status":     "Status",
-        "final amount":     "Selling Price",
-        "_pwn":             "PWN+10%",
-        "_pwn_source":      "Price Source",
-        "_V":               "SP-GT",
-        "_comm_amt":        "Commission",
-        "_GT":              "GT Charges",
-        "_fixed_fee":       "Fixed Fee",
-        "_total_charges":   "Total Charges",
-        "_gst":             "GST",
-        "_myntra_payable":  "Myntra Payable",
-        "_marketing":       "Marketing 3%",
-        "_royalty":         "Royalty 1%",
+        "_rate_source":     "Rate Source",
+        "final amount":     "Selling Price ₹",
+        "_V":               "SP−GT ₹",
+        "_comm_amt":        "Commission ₹",
+        "_GT":              "GT Charges ₹",
+        "_fixed_fee":       "Fixed Fee ₹",
+        "_total_charges":   "Total Charges ₹",
+        "_gst":             "GST ₹",
+        "_myntra_payable":  "Myntra Payable ₹",
+        "_pwn":             "PWN+10% ₹",
+        "_marketing":       "Marketing 3% ₹",
+        "_royalty":         "Royalty 1% ₹",
     }
-
-    NUM_KEYS = {
-        "final amount", "_pwn", "_V", "_comm_amt", "_GT",
-        "_fixed_fee", "_total_charges", "_gst", "_myntra_payable",
-        "_marketing", "_royalty",
-    }
+    NUM_KEYS = {"final amount","_V","_comm_amt","_GT","_fixed_fee",
+                "_total_charges","_gst","_myntra_payable","_pwn","_marketing","_royalty"}
 
     for tab, brand in zip(tabs[:-1], brands_in_result):
         with tab:
             bdf = result[result["brand"] == brand].copy()
             ok  = bdf[bdf["_slab_ok"] == True]
             mis = bdf[bdf["_slab_ok"] == False]
+            fx  = (bdf["_rate_source"] == "Fix Rate").sum()
 
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                st.metric("Orders", len(bdf))
-            with c2:
-                st.metric("Selling Price", f"Rs {bdf['final amount'].sum():,.0f}")
-            with c3:
-                st.metric("Myntra Payable", f"Rs {ok['_myntra_payable'].sum():,.0f}")
-            with c4:
-                st.metric("Unmatched", len(mis),
-                          delta=f"{len(mis)} rows" if len(mis) else None,
-                          delta_color="inverse")
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric("Orders", len(bdf))
+            c2.metric("Selling Price", f"₹{bdf['final amount'].sum():,.0f}")
+            c3.metric("Myntra Payable", f"₹{ok['_myntra_payable'].sum():,.0f}")
+            c4.metric("Fix Rate Rows", int(fx))
+            c5.metric("Unmatched", len(mis), delta=f"{len(mis)}" if len(mis) else None,
+                      delta_color="inverse")
 
-            display_df = ok[list(DISPLAY_COLS.keys())].rename(columns=DISPLAY_COLS)
+            display_df = bdf[list(DISPLAY_COLS.keys())].rename(columns=DISPLAY_COLS)
+            num_dcols  = [DISPLAY_COLS[k] for k in NUM_KEYS if k in DISPLAY_COLS]
+            for c in num_dcols:
+                if c in display_df.columns:
+                    display_df[c] = pd.to_numeric(display_df[c], errors="coerce")
 
-            # Coerce numeric columns
-            num_display_cols = [DISPLAY_COLS[k] for k in NUM_KEYS if k in DISPLAY_COLS]
-            for _c in num_display_cols:
-                if _c in display_df.columns:
-                    display_df[_c] = pd.to_numeric(display_df[_c], errors="coerce")
+            def _highlight(row):
+                if row.get("Rate Source") == "Fix Rate":
+                    return ["background-color:#fffbeb"] * len(row)
+                return [""] * len(row)
 
-            fmt_map = {c: "{:,.2f}" for c in num_display_cols if c in display_df.columns}
+            styled = display_df.style \
+                .format({c: "{:,.2f}" for c in num_dcols if c in display_df.columns},
+                        na_rep="") \
+                .apply(_highlight, axis=1)
 
-            st.dataframe(
-                display_df.style
-                    .format(fmt_map, na_rep="")
-                    .map(
-                        lambda v: "background-color:#f0fdf4;color:#14532d;font-weight:600"
-                        if isinstance(v, (int, float)) and v > 0 else "",
-                        subset=["Myntra Payable"] if "Myntra Payable" in display_df.columns else []
-                    ),
-                use_container_width=True,
-                hide_index=True,
-                height=min(400, 45 + 35 * len(display_df)),
-            )
+            st.dataframe(styled, use_container_width=True, hide_index=True,
+                         height=min(420, 45 + 35 * len(display_df)))
 
             if len(mis) > 0:
-                st.markdown(f"""
-<div class="warn-box">
-{len(mis)} rows had no matching slab (brand+category not found in Rates sheet).
-Check brand name spelling and that the category exists in the Slab file.
-</div>""", unsafe_allow_html=True)
-                st.dataframe(
-                    mis[["seller sku code", "article type", "final amount", "order status"]],
-                    use_container_width=True, hide_index=True,
-                )
+                st.markdown(f"""<div class="warn-box">
+⚠️ {len(mis)} rows had no matching slab or fix rate. Check brand name spelling
+and that the category exists in the Slab file.</div>""", unsafe_allow_html=True)
+                st.dataframe(mis[["seller sku code","style id","article type",
+                                  "final amount","order status"]],
+                             use_container_width=True, hide_index=True)
 
     with tabs[-1]:
         if bad_df.empty:
-            st.markdown("""
-<div class="success-box">All rows matched a slab - no unmatched orders.</div>
-""", unsafe_allow_html=True)
+            st.markdown('<div class="success-box">✅ All rows matched — no unmatched orders.</div>',
+                        unsafe_allow_html=True)
         else:
-            st.markdown(f"""
-<div class="warn-box">{len(bad_df)} orders could not be matched to a slab.</div>
-""", unsafe_allow_html=True)
-            st.dataframe(
-                bad_df[["brand", "seller sku code", "article type",
-                        "final amount", "order status"]],
-                use_container_width=True, hide_index=True,
-            )
+            st.markdown(f'<div class="warn-box">⚠️ {len(bad_df)} unmatched orders.</div>',
+                        unsafe_allow_html=True)
+            st.dataframe(bad_df[["brand","seller sku code","style id","article type",
+                                  "final amount","order status"]],
+                         use_container_width=True, hide_index=True)
 
-
-# Download
+# ── Export ────────────────────────────────────────────────────────────────────
 st.markdown("---")
-st.markdown('<div class="section-header">Export</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">⬇️ Export</div>', unsafe_allow_html=True)
 
 col_dl, col_info = st.columns([1, 3])
 with col_dl:
-    with st.spinner("Preparing Excel..."):
-        xlsx_bytes = build_excel(result)
+    with st.spinner("Preparing Excel…"):
+        xlsx_bytes = build_excel(result, report_date_str=str(report_date_input))
     st.download_button(
-        label="Download Reconciliation (.xlsx)",
+        label="📥 Download Reconciliation (.xlsx)",
         data=xlsx_bytes,
         file_name="Myntra_Reconciliation.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
 with col_info:
-    st.markdown("""
-<div class="info-box">
-The Excel file has <b>one sheet per brand</b> + a <b>Summary</b> sheet.<br>
-Column layout matches your reference workbook exactly.<br>
-<b>PWN+10% (col I)</b> is auto-filled via Replace Sku → Price We Need / Closed lookup.<br>
-Orange cells = SKU not found in any sheet — fill manually.
+    st.markdown("""<div class="info-box">
+One sheet per brand + <b>Summary</b> sheet.<br>
+🟡 <b>Amber rows</b> = Fix Rate applied (style-level override, GST embedded).<br>
+⬜ White rows = normal slab lookup (GST calculated separately).<br>
+<b>PWN+10% (col I)</b> auto-filled via Replace Sku → Price We Need / Closed lookup.
+Orange cells = fill manually.
 </div>""", unsafe_allow_html=True)
 
 st.markdown("<br><br>", unsafe_allow_html=True)
