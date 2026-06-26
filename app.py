@@ -746,9 +746,9 @@ if brands_in_result:
                              if k.startswith("_") or k in ("final amount",)]
 
             st.dataframe(
-                display_df.style
-                    .format({c: "₹{:,.2f}" for c in num_cols_disp if c in display_df.columns})
-                    .map(
+    display_df.style
+        .format({c: "₹{:,.2f}" for c in num_cols_disp if c in display_df.columns}, na_rep="")
+        .map(
                         lambda v: "background-color:#f0fdf4;color:#166534;font-weight:600"
                         if isinstance(v, (int, float)) and v > 0 else "",
                         subset=["Myntra Payable ₹"] if "Myntra Payable ₹" in display_df.columns else []
