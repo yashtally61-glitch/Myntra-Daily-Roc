@@ -166,16 +166,64 @@ def load_slab(file_bytes: bytes):
     for c in numeric_cols:
         rates[c] = pd.to_numeric(rates[c], errors="coerce")
 
-    # ---- Replace Sku sheet (optional – used for SKU normalisation) -------
-    sku_map = {}
+    # ---- Replace Sku sheet — MYNTRA SKU CODE → OMS SKU CODE --------------
+    # Columns: DATE, YRN NUMBER, MYNTRA SKU CODE, STYLE ID, OMS SKU CODE, BRAND
+    # NOTE: the orders CSV's "seller sku code" column is what matches
+    # "MYNTRA SKU CODE" here (NOT the CSV's "myntra sku code" column,
+    # which instead matches "YRN NUMBER" — verified against real data).
+    oms_map = {}
     if "Replace Sku" in wb.sheetnames:
         ws2 = wb["Replace Sku"]
         for row in ws2.iter_rows(min_row=2, values_only=True):
             row = list(row) + [None] * max(0, 5 - len(row))  # defensive pad
             if row[2] and row[4]:                     # MYNTRA SKU CODE → OMS SKU CODE
-                sku_map[str(row[2]).strip()] = str(row[4]).strip()
+                oms_map[str(row[2]).strip()] = str(row[4]).strip()
 
-    return rates, sku_map
+    # ---- "Price We Need Excel" sheet — OMS Child SKU → PWN+10% ----------
+    pwn_map = {}
+    pwn_sheet_name = None
+    for sn in wb.sheetnames:
+        if sn.strip().lower().startswith("price we need"):
+            pwn_sheet_name = sn
+            break
+    if pwn_sheet_name:
+        ws3 = wb[pwn_sheet_name]
+        for row in ws3.iter_rows(min_row=2, values_only=True):
+            row = list(row) + [None] * max(0, 3 - len(row))
+            if row[1] and row[2] is not None:          # OMS Child SKU → PWN+10%
+                pwn_map[str(row[1]).strip()] = row[2]
+
+    # ---- "Closed" sheet — OMS Child SKU → Closed Price (fallback) -------
+    closed_map = {}
+    if "Closed" in wb.sheetnames:
+        ws4 = wb["Closed"]
+        for row in ws4.iter_rows(min_row=2, values_only=True):
+            row = list(row) + [None] * max(0, 3 - len(row))
+            if row[1] and row[2] is not None:           # OMS Child SKU → Closed Price
+                closed_map[str(row[1]).strip()] = row[2]
+
+    return rates, oms_map, pwn_map, closed_map
+
+
+def get_pwn_price(oms_map: dict, pwn_map: dict, closed_map: dict, seller_sku_code: str):
+    """
+    Resolve the PWN+10% price for an order row, following the chain:
+      seller sku code  --[Replace Sku: MYNTRA SKU CODE→OMS SKU CODE]-->  oms_sku
+      oms_sku --[Price We Need Excel: OMS Child SKU→PWN+10%]--> price   (preferred)
+      oms_sku --[Closed: OMS Child SKU→Closed Price]--> price          (fallback)
+    Returns (price_or_None, oms_sku_or_None, source) where source is
+    "PWN", "Closed", or None.
+    """
+    key = str(seller_sku_code).strip()
+    oms_sku = oms_map.get(key)
+    if not oms_sku:
+        return None, None, None
+
+    if oms_sku in pwn_map:
+        return pwn_map[oms_sku], oms_sku, "PWN"
+    if oms_sku in closed_map:
+        return closed_map[oms_sku], oms_sku, "Closed"
+    return None, oms_sku, None
 
 
 def _lookup(subset: pd.DataFrame, lo_col: str, hi_col: str, val: float):
@@ -221,10 +269,13 @@ def get_charges(rates: pd.DataFrame, brand: str, cat: str, SP: float):
     return GT, V, comm_rate, comm_amt, fixed_fee
 
 
-def reconcile(rates: pd.DataFrame, df: pd.DataFrame, brand_filter=None):
+def reconcile(rates: pd.DataFrame, df: pd.DataFrame, oms_map: dict, pwn_map: dict,
+              closed_map: dict, brand_filter=None):
     """
     Run reconciliation on a Myntra seller-orders CSV DataFrame.
-    Returns enriched DataFrame with all reconciliation columns.
+    Returns enriched DataFrame with all reconciliation columns, including
+    the resolved PWN+10% price (_pwn), the OMS SKU it was resolved through
+    (_oms_sku), and where the price came from (_pwn_source: "PWN"/"Closed"/None).
     """
     df = df.copy()
     df["brand"]        = df["brand"].astype(str).str.strip()
@@ -240,6 +291,9 @@ def reconcile(rates: pd.DataFrame, df: pd.DataFrame, brand_filter=None):
         cat   = row["article type"]
 
         GT, V, comm_rate, comm_amt, fixed_fee = get_charges(rates, brand, cat, SP)
+        pwn_price, oms_sku, pwn_source = get_pwn_price(
+            oms_map, pwn_map, closed_map, row.get("seller sku code", "")
+        )
 
         if GT is None:
             rec = dict(
@@ -260,6 +314,9 @@ def reconcile(rates: pd.DataFrame, df: pd.DataFrame, brand_filter=None):
                 _myntra_payable=myntra_pay, _marketing=marketing,
                 _royalty=royalty, _slab_ok=True,
             )
+        rec["_pwn"]        = pwn_price
+        rec["_oms_sku"]    = oms_sku
+        rec["_pwn_source"] = pwn_source
         records.append(rec)
 
     enrich = pd.DataFrame(records, index=df.index)
@@ -335,7 +392,7 @@ def build_excel(result_df: pd.DataFrame) -> bytes:
                 row.get("seller sku code", ""),
                 row.get("article type", ""),
                 row.get("total mrp", ""),
-                None,                              # H: PWN – user fills
+                row.get("_pwn"),                    # H: PWN+10% – auto-filled from Slab lookups
                 row.get("_marketing"),             # I
                 RETURN_CHARGES,                    # J
                 row.get("_royalty"),               # K
@@ -357,8 +414,11 @@ def build_excel(result_df: pd.DataFrame) -> bytes:
 
             num_cols = {9,10,11,12,13,14,15,16,17,18,19,20,21,22}
             for ci, val in enumerate(vals, 1):
-                if ci == 8:                        # PWN – orange
-                    _cell(ws, ri, ci, val, _Y, ofont)
+                if ci == 8:                        # PWN+10% – orange if missing, normal if auto-filled
+                    fill_h = alt if val is not None else _Y
+                    font_h = nfont if val is not None else ofont
+                    _cell(ws, ri, ci, val, fill_h, font_h,
+                          fmt="#,##0.00" if val is not None else None)
                 elif ci == 18:                     # Myntra Payable – green
                     _cell(ws, ri, ci, val, _G, gfont,
                           fmt="#,##0.00" if val is not None else None)
@@ -386,7 +446,8 @@ def build_excel(result_df: pd.DataFrame) -> bytes:
         # Note row
         nr = len(bdf) + 3
         note = ws.cell(row=nr, column=1,
-            value="📌 Fill PWN+10% (Column H) to compute Total Amount & Difference")
+            value="📌 PWN+10% (Column H) auto-filled via Replace Sku → Price We Need / Closed lookup. "
+                  "Orange cells = no SKU/price match found — fill manually.")
         note.font  = Font(bold=True, italic=True, size=9, color="C55A11", name="Calibri")
         note.fill  = PatternFill("solid", fgColor="FFF2CC")
         ws.merge_cells(f"A{nr}:{get_column_letter(len(HEADERS))}{nr}")
@@ -538,7 +599,7 @@ Myntra Seller Orders export. Key columns needed:<br>
 # ── Load data ─────────────────────────────────────────────────────────────────
 with st.spinner("Loading slab rates…"):
     try:
-        rates, sku_map = load_slab(slab_file.read())
+        rates, oms_map, pwn_map, closed_map = load_slab(slab_file.read())
     except Exception as e:
         st.error(f"❌ Could not read Slab file: {e}")
         st.stop()
@@ -557,7 +618,8 @@ with st.spinner("Reading orders…"):
 
 # ── Run reconciliation ────────────────────────────────────────────────────────
 with st.spinner("Reconciling…"):
-    result = reconcile(rates, orders_df, brand_filter if brand_filter else None)
+    result = reconcile(rates, orders_df, oms_map, pwn_map, closed_map,
+                        brand_filter if brand_filter else None)
 
 ok_df  = result[result["_slab_ok"] == True]
 bad_df = result[result["_slab_ok"] == False]
@@ -570,13 +632,17 @@ total_payable  = ok_df["_myntra_payable"].sum()
 total_charges  = ok_df["_total_charges"].sum()
 total_gst      = ok_df["_gst"].sum()
 unmatched      = len(bad_df)
+pwn_found      = result["_pwn"].notna().sum()
+pwn_missing    = total_orders - pwn_found
 
-cols = st.columns(5)
+cols = st.columns(6)
 kpi_data = [
     ("Total Orders",         f"{total_orders:,}",          None,       "orders in report"),
     ("Total Selling Price",  f"₹{total_sp:,.0f}",          None,       "sum of final amount"),
     ("Total Myntra Payable", f"₹{total_payable:,.0f}",     None,       "after all deductions"),
     ("Total Charges + GST",  f"₹{total_charges+total_gst:,.0f}", None, "platform fees"),
+    ("PWN Price Matched",    f"{pwn_found}/{total_orders}",
+     "positive" if pwn_missing == 0 else "negative",       "via Replace Sku → Price We Need/Closed"),
     ("Unmatched Rows",       f"{unmatched}",
      "negative" if unmatched > 0 else "positive",          "no slab found"),
 ]
@@ -636,6 +702,7 @@ if brands_in_result:
         "article type":      "Category",
         "order status":      "Status",
         "final amount":      "Selling Price ₹",
+        "_pwn":              "PWN+10% ₹",
         "_V":                "SP − GT ₹",
         "_comm_amt":         "Commission ₹",
         "_GT":               "GT Charges ₹",
