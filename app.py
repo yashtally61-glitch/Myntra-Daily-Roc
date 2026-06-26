@@ -576,15 +576,15 @@ with st.sidebar:
     st.markdown("""
 <div class="upload-hint">
 <b>Formula used:</b><br>
-• GT = slab lookup by SP<br>
-• V = SP − GT<br>
-• Commission = rate(V) × V<br>
-• Fixed Fee = slab lookup by SP<br>
-• Total Charges = Comm + GT + Fee<br>
-• GST = (Total − GT) × 18%<br>
-• Myntra Payable = SP − TC − GST<br>
-• Marketing = SP × 3%<br>
-• Royalty = V × 1%
+- GT = slab lookup by SP<br>
+- V = SP - GT<br>
+- Commission = rate(V) * V<br>
+- Fixed Fee = slab lookup by SP<br>
+- Total Charges = Comm + GT + Fee<br>
+- GST = (Total - GT) * 18%<br>
+- Myntra Payable = SP - TC - GST<br>
+- Marketing = SP * 3%<br>
+- Royalty = V * 1%
 </div>
 """, unsafe_allow_html=True)
 
