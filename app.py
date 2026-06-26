@@ -211,13 +211,13 @@ def get_pwn_price(oms_map: dict, pwn_map: dict, closed_map: dict, seller_sku_cod
     # Step 1: Resolve Myntra SKU → OMS Child SKU via Replace Sku sheet
     oms_sku = oms_map.get(key, key)
 
-    # Step 2: Check Price We Need Excel first (preferred)
-    if oms_sku in pwn_map:
-        return pwn_map[oms_sku], oms_sku, "PWN"
-
-    # Step 3: Check Closed sheet
+    # Step 2: Check Closed sheet using Original SKU (oms_sku)
     if oms_sku in closed_map:
         return closed_map[oms_sku], oms_sku, "Closed"
+
+    # Step 3: Check Price We Need Excel using Original SKU (oms_sku)
+    if oms_sku in pwn_map:
+        return pwn_map[oms_sku], oms_sku, "PWN"
 
     return None, oms_sku, None
 
