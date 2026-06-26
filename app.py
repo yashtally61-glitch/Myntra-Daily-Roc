@@ -616,7 +616,7 @@ st.dataframe(
     sum_df.style
         .format({c: "₹{:,.2f}" for c in sum_df.columns if "₹" in c})
         .set_properties(**{"text-align": "center"}),
-    use_container_width=True, hide_index=True, height=None,
+    use_container_width=True, hide_index=True,
 )
 
 st.markdown("<br>", unsafe_allow_html=True)
