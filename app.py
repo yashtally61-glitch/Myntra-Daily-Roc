@@ -208,25 +208,18 @@ def load_slab(file_bytes: bytes):
 def get_pwn_price(oms_map: dict, pwn_map: dict, closed_map: dict, seller_sku_code: str):
     key = str(seller_sku_code).strip()
 
-    # Step 1: Try direct match in Closed sheet (OMS Child SKU = seller sku code directly)
-    if key in closed_map:
-        return closed_map[key], key, "Closed"
+    # Step 1: Resolve Myntra SKU → OMS Child SKU via Replace Sku sheet
+    oms_sku = oms_map.get(key, key)
 
-    # Step 2: Resolve via Replace Sku sheet (seller sku code → OMS Child SKU)
-    oms_sku = oms_map.get(key)
-    if not oms_sku:
-        return None, None, None
-
-    # Step 3: Check Price We Need Excel with resolved OMS SKU
+    # Step 2: Check Price We Need Excel first (preferred)
     if oms_sku in pwn_map:
         return pwn_map[oms_sku], oms_sku, "PWN"
 
-    # Step 4: Check Closed sheet with resolved OMS SKU
+    # Step 3: Check Closed sheet
     if oms_sku in closed_map:
         return closed_map[oms_sku], oms_sku, "Closed"
 
     return None, oms_sku, None
-
 
 def _lookup(subset: pd.DataFrame, lo_col: str, hi_col: str, val: float):
     """Find the slab row where lo_col <= val < hi_col."""
