@@ -209,8 +209,11 @@ def get_pwn_price(oms_map: dict, pwn_map: dict, closed_map: dict, seller_sku_cod
     """
     Resolve the PWN+10% price for an order row, following the chain:
       seller sku code  --[Replace Sku: MYNTRA SKU CODE→OMS SKU CODE]-->  oms_sku
-      oms_sku --[Price We Need Excel: OMS Child SKU→PWN+10%]--> price   (preferred)
-      oms_sku --[Closed: OMS Child SKU→Closed Price]--> price          (fallback)
+      oms_sku --[Closed: OMS Child SKU→Closed Price]--> price            (preferred —
+          a SKU listed in Closed means it's no longer active, so its Closed
+          Price is the correct/current one even if it still also appears,
+          possibly stale, in Price We Need Excel)
+      oms_sku --[Price We Need Excel: OMS Child SKU→PWN+10%]--> price    (fallback)
     Returns (price_or_None, oms_sku_or_None, source) where source is
     "PWN", "Closed", or None.
     """
@@ -219,10 +222,10 @@ def get_pwn_price(oms_map: dict, pwn_map: dict, closed_map: dict, seller_sku_cod
     if not oms_sku:
         return None, None, None
 
-    if oms_sku in pwn_map:
-        return pwn_map[oms_sku], oms_sku, "PWN"
     if oms_sku in closed_map:
         return closed_map[oms_sku], oms_sku, "Closed"
+    if oms_sku in pwn_map:
+        return pwn_map[oms_sku], oms_sku, "PWN"
     return None, oms_sku, None
 
 
@@ -329,13 +332,14 @@ def reconcile(rates: pd.DataFrame, df: pd.DataFrame, oms_map: dict, pwn_map: dic
 
 HEADERS = [
     "order release id", "order line id", "STYLE ID", "Myntra SKU Code", "SKU",
-    "Article Type", "MRP", "PWN+10%", "Marketing Charges 3%", "Return Charges",
-    "Royalty", "Total Amount", "Commission Amount", "GT Charges", "Fixed Fee",
-    "Total Charges", "GST Amount", "Myntra Payble Amount", "Rebate", "Diffrence",
-    "Selling Price", "Selling Price -GT Price", "Date", "Brand", "Order Status",
+    "Original SKU", "Article Type", "MRP", "PWN+10%", "Marketing Charges 3%",
+    "Return Charges", "Royalty", "Total Amount", "Commission Amount",
+    "GT Charges", "Fixed Fee", "Total Charges", "GST Amount",
+    "Myntra Payble Amount", "Rebate", "Diffrence", "Selling Price",
+    "Selling Price -GT Price", "Date", "Brand", "Order Status", "Price Source",
 ]
 
-COL_W = [18,15,12,24,24,14,8,10,18,14,10,13,17,11,10,13,11,18,8,11,13,18,13,12,12]
+COL_W = [18,15,12,24,24,22,14,8,10,18,14,10,13,17,11,10,13,11,18,8,11,13,18,13,12,12,12]
 
 _H  = PatternFill("solid", fgColor="1F4E79")
 _Y  = PatternFill("solid", fgColor="FCE4D6")   # orange = user fills
@@ -390,55 +394,57 @@ def build_excel(result_df: pd.DataFrame) -> bytes:
                 row.get("style id", ""),
                 row.get("myntra sku code", ""),
                 row.get("seller sku code", ""),
+                row.get("_oms_sku", ""),           # F: Original SKU (resolved OMS SKU)
                 row.get("article type", ""),
                 row.get("total mrp", ""),
-                row.get("_pwn"),                    # H: PWN+10% – auto-filled from Slab lookups
-                row.get("_marketing"),             # I
-                RETURN_CHARGES,                    # J
-                row.get("_royalty"),               # K
-                None,                              # L: Total Amount (formula)
-                row.get("_comm_amt"),              # M
-                row.get("_GT"),                    # N
-                row.get("_fixed_fee"),             # O
-                row.get("_total_charges"),         # P
-                row.get("_gst"),                   # Q
-                row.get("_myntra_payable"),        # R
-                0,                                 # S: Rebate
-                None,                              # T: Difference (formula)
-                SP,                                # U
-                V,                                 # V
-                "25-Jun-2026",                     # W
-                row.get("brand", ""),              # X
-                row.get("order status", ""),       # Y
+                row.get("_pwn"),                    # I: PWN+10% – auto-filled from Slab lookups
+                row.get("_marketing"),             # J
+                RETURN_CHARGES,                    # K
+                row.get("_royalty"),               # L
+                None,                              # M: Total Amount (formula)
+                row.get("_comm_amt"),              # N
+                row.get("_GT"),                    # O
+                row.get("_fixed_fee"),             # P
+                row.get("_total_charges"),         # Q
+                row.get("_gst"),                   # R
+                row.get("_myntra_payable"),        # S
+                0,                                 # T: Rebate
+                None,                              # U: Difference (formula)
+                SP,                                # V
+                V,                                 # W
+                "25-Jun-2026",                     # X
+                row.get("brand", ""),              # Y
+                row.get("order status", ""),       # Z
+                row.get("_pwn_source") or "Manual", # AA: Price Source
             ]
 
-            num_cols = {9,10,11,12,13,14,15,16,17,18,19,20,21,22}
+            num_cols = {10,11,12,13,14,15,16,17,18,19,20,21,22,23}
             for ci, val in enumerate(vals, 1):
-                if ci == 8:                        # PWN+10% – orange if missing, normal if auto-filled
+                if ci == 9:                        # PWN+10% – orange if missing, normal if auto-filled
                     fill_h = alt if val is not None else _Y
                     font_h = nfont if val is not None else ofont
                     _cell(ws, ri, ci, val, fill_h, font_h,
                           fmt="#,##0.00" if val is not None else None)
-                elif ci == 18:                     # Myntra Payable – green
+                elif ci == 19:                     # Myntra Payable – green
                     _cell(ws, ri, ci, val, _G, gfont,
                           fmt="#,##0.00" if val is not None else None)
-                elif ci == 20:                     # Difference (formula)
+                elif ci == 21:                     # Difference (formula)
                     _cell(ws, ri, ci, None, _B, nfont)
-                elif ci == 12:                     # Total Amount (formula)
+                elif ci == 13:                     # Total Amount (formula)
                     _cell(ws, ri, ci, None, alt, nfont)
                 else:
                     fmt = "#,##0.00" if ci in num_cols else (
-                          "#,##0"    if ci == 7 else None)
+                          "#,##0"    if ci == 8 else None)
                     _cell(ws, ri, ci, val, alt, nfont, fmt)
 
-            # Excel formulas for Total Amount (L) and Difference (T)
-            l = ws.cell(row=ri, column=12)
-            l.value = f'=IF(H{ri}="","",J{ri}+I{ri}+H{ri}+K{ri})'
-            l.number_format = "#,##0.00"
+            # Excel formulas for Total Amount (M) and Difference (U)
+            m = ws.cell(row=ri, column=13)
+            m.value = f'=IF(I{ri}="","",K{ri}+J{ri}+I{ri}+L{ri})'
+            m.number_format = "#,##0.00"
 
-            t = ws.cell(row=ri, column=20)
-            t.value = f'=IF(H{ri}="","",R{ri}-L{ri}+S{ri})'
-            t.number_format = "#,##0.00"
+            u = ws.cell(row=ri, column=21)
+            u.value = f'=IF(I{ri}="","",S{ri}-M{ri}+T{ri})'
+            u.number_format = "#,##0.00"
 
         ws.freeze_panes = "A2"
         ws.auto_filter.ref = f"A1:{get_column_letter(len(HEADERS))}1"
@@ -699,10 +705,12 @@ if brands_in_result:
         "order release id":  "Order ID",
         "order line id":     "Line ID",
         "seller sku code":   "SKU",
+        "_oms_sku":          "Original SKU",
         "article type":      "Category",
         "order status":      "Status",
         "final amount":      "Selling Price ₹",
         "_pwn":              "PWN+10% ₹",
+        "_pwn_source":       "Price Source",
         "_V":                "SP − GT ₹",
         "_comm_amt":         "Commission ₹",
         "_GT":               "GT Charges ₹",
