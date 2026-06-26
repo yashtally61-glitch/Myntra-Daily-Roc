@@ -225,17 +225,6 @@ def get_pwn_price(oms_map: dict, pwn_map: dict, closed_map: dict, seller_sku_cod
     if oms_sku in closed_map:
         return closed_map[oms_sku], oms_sku, "Closed"
 
-    return None, oms_sku, None.
-    """
-    key = str(seller_sku_code).strip()
-    oms_sku = oms_map.get(key)
-    if not oms_sku:
-        return None, None, None
-
-    if oms_sku in closed_map:
-        return closed_map[oms_sku], oms_sku, "Closed"
-    if oms_sku in pwn_map:
-        return pwn_map[oms_sku], oms_sku, "PWN"
     return None, oms_sku, None
 
 
