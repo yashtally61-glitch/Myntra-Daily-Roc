@@ -254,7 +254,7 @@ def get_charges(rates: pd.DataFrame, brand: str, cat: str, SP: float):
     Formula (matches reference workbook exactly):
       1. GT      = slab lookup by SP
       2. V       = SP - GT
-      3. comm    = rate(V) × V     ← rate looked up by V, not SP
+      3. comm    = rate(V) * V     <- rate looked up by V, not SP
       4. fixed   = slab lookup by SP
     """
     sub = rates[
