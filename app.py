@@ -348,7 +348,7 @@ def get_charges_from_slab(rates, brand, cat, SP):
         sub["Upper Limit Fixed Fee"].notna().any()
     )
     if fee_limits_present:
-        fee_row = _lookup(sub, "Lower Limit Fixed Fee", "Upper Limit Fixed Fee", SP)
+        fee_row = _lookup(sub, "Lower Limit Fixed Fee", "Upper Limit Fixed Fee", V)
         if fee_row is None:
             return None, None, None, None, None
         fixed_fee = float(fee_row["Fix Fee"])
