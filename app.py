@@ -154,6 +154,60 @@ def compute_brand_charges(brand: str, SP: float, V: float, brand_cfg: dict) -> t
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+#  SLAB VALIDATION  (NEW)
+# ═════════════════════════════════════════════════════════════════════════════
+
+def validate_slab_ranges(rates: pd.DataFrame) -> list:
+    """
+    Scans every (Brand Name, Category) group for the three pair-columns
+    (Commission, GT, Fixed Fee) and flags:
+      - INVALID  : a row where Lower Limit > Upper Limit
+      - GAP      : a value range between consecutive brackets that no row covers
+      - CONFLICT : two overlapping brackets that disagree on the charge value
+                   (a silent wrong-answer risk — the app picks whichever row
+                   happens to come first)
+    Returns a list of dicts: {brand, category, kind, column, detail}
+    Harmless overlaps (identical charge value on both sides) are NOT reported.
+    """
+    issues = []
+    pairs = [
+        ("Lower Limit Commision", "Upper Limit Commision", "Commision Charge", "Commission"),
+        ("GT Lower Limit",        "GT Upper Limit",        "GT Charges",       "GT"),
+        ("Lower Limit Fixed Fee", "Upper Limit Fixed Fee", "Fix Fee",          "Fixed Fee"),
+    ]
+    for (brand, cat), g in rates.groupby(["Brand Name", "Category"]):
+        for lo_col, hi_col, val_col, label in pairs:
+            gg = g.dropna(subset=[lo_col, hi_col]).sort_values(lo_col).reset_index()
+            if gg.empty:
+                continue
+            for i in range(len(gg)):
+                cur = gg.iloc[i]
+                if cur[hi_col] < cur[lo_col]:
+                    issues.append(dict(
+                        brand=brand, category=cat, kind="INVALID", column=label,
+                        detail=f"row has {lo_col}={cur[lo_col]} > {hi_col}={cur[hi_col]}",
+                    ))
+                if i + 1 < len(gg):
+                    nxt = gg.iloc[i + 1]
+                    if nxt[lo_col] > cur[hi_col]:
+                        issues.append(dict(
+                            brand=brand, category=cat, kind="GAP", column=label,
+                            detail=f"no bracket covers {cur[hi_col]} – {nxt[lo_col]}",
+                        ))
+                    elif nxt[lo_col] < cur[hi_col]:
+                        v1, v2 = cur[val_col], nxt[val_col]
+                        if v1 != v2:
+                            issues.append(dict(
+                                brand=brand, category=cat, kind="CONFLICT", column=label,
+                                detail=(f"[{cur[lo_col]}-{cur[hi_col]}) and "
+                                        f"[{nxt[lo_col]}-{nxt[hi_col]}) overlap with "
+                                        f"different values ({v1} vs {v2}) — wrong "
+                                        f"amount may be picked"),
+                            ))
+    return issues
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 #  FILE LOADERS
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -193,6 +247,9 @@ def load_slab(file_bytes: bytes):
                      "Lower Limit Fixed Fee","Upper Limit Fixed Fee"]
     rates = rates.dropna(subset=slab_num_cols, how="all").reset_index(drop=True)
 
+    # NEW: validate slab ranges and surface any data problems to the user.
+    slab_issues = validate_slab_ranges(rates)
+
     oms_map, yrn_map = {}, {}
     if "Replace Sku" in wb.sheetnames:
         for row in wb["Replace Sku"].iter_rows(min_row=2, values_only=True):
@@ -218,7 +275,7 @@ def load_slab(file_bytes: bytes):
             if row[1] and row[2] is not None:
                 closed_map[str(row[1]).strip()] = row[2]
 
-    return rates, oms_map, yrn_map, pwn_map, closed_map
+    return rates, oms_map, yrn_map, pwn_map, closed_map, slab_issues
 
 
 @st.cache_data(show_spinner=False)
@@ -730,9 +787,28 @@ Myntra Seller Orders export — <code>brand</code>, <code>article type</code>,
 # ── Load files ────────────────────────────────────────────────────────────────
 with st.spinner("Loading slab rates…"):
     try:
-        rates, oms_map, yrn_map, pwn_map, closed_map = load_slab(slab_file.read())
+        rates, oms_map, yrn_map, pwn_map, closed_map, slab_issues = load_slab(slab_file.read())
     except Exception as e:
         st.error(f"❌ Slab error: {e}"); st.stop()
+
+# NEW: surface slab data-quality problems right away, before reconciling.
+if slab_issues:
+    n_conflict = sum(1 for i in slab_issues if i["kind"] == "CONFLICT")
+    n_gap      = sum(1 for i in slab_issues if i["kind"] in ("GAP", "INVALID"))
+    with st.expander(
+        f"⚠️ Slab data issues found — {len(slab_issues)} "
+        f"({n_conflict} conflicting value{'s' if n_conflict!=1 else ''}, "
+        f"{n_gap} gap/invalid range{'s' if n_gap!=1 else ''}) — click to review",
+        expanded=True,
+    ):
+        st.markdown("""<div class="warn-box">
+These problems live in the <b>Rates</b> sheet of your Slab.xlsx, not in this app.
+<b>CONFLICT</b> = two overlapping brackets disagree on the charge — the app silently
+picks whichever one appears first, which can give the wrong Fixed Fee / Commission / GT.
+<b>GAP / INVALID</b> = a price range with no matching bracket at all — those orders will
+show up as "Unmatched". Fix the Rates sheet and re-upload to clear these.</div>""",
+            unsafe_allow_html=True)
+        st.dataframe(pd.DataFrame(slab_issues), use_container_width=True, hide_index=True)
 
 fix_df = None
 if fix_file:
