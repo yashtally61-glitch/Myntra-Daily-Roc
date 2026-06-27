@@ -352,9 +352,25 @@ def get_charges_from_slab(rates: pd.DataFrame, brand: str, cat: str, SP: float):
       5. fixed_fee = slab lookup by SP
     Returns (GT, V, comm_rate, comm_amt, fixed_fee) or all-None on miss.
     """
+    # Guard: if brand or cat is NaN / empty / non-string, can't match anything
+    try:
+        brand_str = str(brand).strip()
+        cat_str   = str(cat).strip().lower()
+    except Exception:
+        return None, None, None, None, None
+    if not brand_str or brand_str.lower() in ("nan", "none", ""):
+        return None, None, None, None, None
+    if not cat_str or cat_str in ("nan", "none", ""):
+        return None, None, None, None, None
+
+    try:
+        SP = float(SP)
+    except Exception:
+        return None, None, None, None, None
+
     sub = rates[
-        (rates["Brand Name"] == brand) &
-        (rates["Category"].str.lower() == cat.lower())
+        (rates["Brand Name"] == brand_str) &
+        (rates["Category"].str.lower() == cat_str)
     ]
     if sub.empty:
         return None, None, None, None, None
@@ -414,9 +430,12 @@ def reconcile(rates, df, oms_map, yrn_map, pwn_map, closed_map,
 
     records = []
     for _, row in df.iterrows():
-        SP    = float(row["final amount"])
-        brand = row["brand"]
-        cat   = row["article type"]
+        try:
+            SP = float(row["final amount"])
+        except Exception:
+            SP = 0.0
+        brand = str(row.get("brand", "") or "").strip()
+        cat   = str(row.get("article type", "") or "").strip()
         sid   = row.get("style id", None)
 
         # ── 1. Fix Rate ───────────────────────────────────────────────────
