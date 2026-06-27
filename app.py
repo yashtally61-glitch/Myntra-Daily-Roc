@@ -400,30 +400,27 @@ def get_charges_from_slab(rates, brand, cat, SP):
     GT = float(gt_row["GT Charges"])
     V  = round(SP - GT, 2)
 
-    fee_limits_present = (
-        sub["Lower Limit Fixed Fee"].notna().any() and
-        sub["Upper Limit Fixed Fee"].notna().any()
-    )
-    if fee_limits_present:
-        fee_row = _lookup(sub, "Lower Limit Fixed Fee", "Upper Limit Fixed Fee", V)
-        if fee_row is None:
-            return None, None, None, None, None
-        fixed_fee = float(fee_row["Fix Fee"])
-    else:
-        import math
-        raw_fee = gt_row.get("Fix Fee", None)
-        if raw_fee is None or (isinstance(raw_fee, float) and math.isnan(raw_fee)):
-            fee_vals = sub["Fix Fee"].dropna()
-            fixed_fee = float(fee_vals.iloc[0]) if not fee_vals.empty else 0.0
-        else:
-            fixed_fee = float(raw_fee)
+    fee_row = _lookup(sub, "Lower Limit Fixed Fee", "Upper Limit Fixed Fee", SP)
+    if fee_row is None:
+        return None, None, None, None, None
+    fixed_fee = float(fee_row["Fix Fee"])
 
     comm_row = _lookup(sub, "Lower Limit Commision", "Upper Limit Commision", V)
     if comm_row is None:
         return None, None, None, None, None
 
+    fee_row = _lookup(sub, "Lower Limit Fixed Fee", "Upper Limit Fixed Fee", SP)
+    if fee_row is None:
+        return None, None, None, None, None
+
+    fee_row = _lookup(sub, "Lower Limit Fixed Fee", "Upper Limit Fixed Fee", SP)
+    if fee_row is None:
+        return None, None, None, None, None
+
     comm_rate = float(comm_row["Commision Charge"])
     comm_amt  = round(comm_rate * V, 2)
+    fixed_fee = float(fee_row["Fix Fee"])
+    return GT, V, comm_rate, comm_amt, fixed_fee
     return GT, V, comm_rate, comm_amt, fixed_fee
 
 
