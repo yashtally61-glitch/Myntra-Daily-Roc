@@ -1189,6 +1189,12 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
         with st.spinner("Reconciling…"):
             a_result = amz_reconcile(a_raw_df, a_sku_map, a_pwn_map, a_closed_map)
 
+        # Keep only "Order" type transactions
+        a_result = a_result[a_result["type"] == "Order"].reset_index(drop=True)
+
+        # Drop orders where Total Sales Amount is 0
+        a_result = a_result[a_result["Total Sales Amount"] != 0].reset_index(drop=True)
+
         a_orders_df = a_result[a_result["type"] == "Order"]
         gst_col     = "Total sales tax liable(GST before adjusting TCS)"
 
