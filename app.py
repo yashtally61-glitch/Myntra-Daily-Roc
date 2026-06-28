@@ -1306,24 +1306,26 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
                 st.markdown(f'<div class="warn-box">⚠️ <b>{len(unmatched_skus)} SKU(s)</b> '
                             f'have no PWN price — enter prices manually below.</div>', unsafe_allow_html=True)
 
-                manual_edit_df = unmatched_skus[["Seller SKU","OMS SKU","Net Total ₹"]].copy()
-                manual_edit_df["Manual PWN+10%"] = None
+                try:
+                    manual_edit_df = unmatched_skus[["Seller SKU","OMS SKU","Net Total ₹"]].copy().reset_index(drop=True)
+                    manual_edit_df["Manual PWN+10%"] = 0.0
 
-                edited_df = st.data_editor(
-                    manual_edit_df,
-                    column_config={
-                        "Seller SKU":     st.column_config.TextColumn(disabled=True),
-                        "OMS SKU":        st.column_config.TextColumn(disabled=True),
-                        "Net Total ₹":    st.column_config.NumberColumn(disabled=True, format="%.2f"),
-                        "Manual PWN+10%": st.column_config.NumberColumn(
-                            help="Enter PWN+10% price manually. PWN+RS50 = this + ₹50.",
-                            min_value=0.0, step=1.0, format="%.2f"),
-                    },
-                    hide_index=True, use_container_width=True, key="a_manual_pwn_editor",
-                )
+                    edited_df = st.data_editor(
+                        manual_edit_df,
+                        disabled=["Seller SKU","OMS SKU","Net Total ₹"],
+                        hide_index=True,
+                        use_container_width=True,
+                        key="a_manual_pwn_editor",
+                    )
 
-                manual_map = {
-                    row["OMS SKU"]: row["Manual PWN+10%"]
+                    manual_map = {
+                        row["OMS SKU"]: row["Manual PWN+10%"]
+                        for _, row in edited_df.iterrows()
+                        if row["Manual PWN+10%"] and row["Manual PWN+10%"] > 0
+                    }
+                except Exception as e:
+                    st.error(f"Manual PWN editor failed to load: {e}")
+                    manual_map = {}
                     for _, row in edited_df.iterrows()
                     if pd.notna(row["Manual PWN+10%"])
                 }
