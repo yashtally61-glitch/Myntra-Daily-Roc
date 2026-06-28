@@ -1329,12 +1329,16 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
 
                     disp = disp.loc[:, ~disp.columns.duplicated()].reset_index(drop=True)
 
-st.dataframe(disp.style
-    .format({c:"{:,.2f}" for c in NUM_DISP if c in disp.columns}, na_rep="—")
-    ...
-    use_container_width=True, hide_index=True,
-    height=min(450, 45+35*len(disp)))
+                    def _color_diff_disp(val):
+                        if pd.isna(val): return ""
+                        return "color:#15803d;font-weight:700" if val>=0 else "color:#b91c1c;font-weight:700"
 
+                    st.dataframe(disp.style
+                        .format({c:"{:,.2f}" for c in NUM_DISP if c in disp.columns}, na_rep="—")
+                        .map(_color_diff_disp, subset=["Difference ₹"] if "Difference ₹" in disp.columns else [])
+                        .set_properties(**{"text-align":"center"}),
+                        use_container_width=True, hide_index=True,
+                        height=min(450, 45+35*len(disp)))
         # ── Export ────────────────────────────────────────────────────────────
         st.markdown("---")
         st.markdown('<div class="section-header">⬇️ Export</div>', unsafe_allow_html=True)
