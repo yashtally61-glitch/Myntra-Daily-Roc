@@ -1251,7 +1251,7 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
         a_money_c  = [c for c in a_sum_df.columns if "₹" in c]
         st.dataframe(a_sum_df.style
             .format({c:"{:,.2f}" for c in a_money_c}, na_rep="—")
-            .applymap(_color_diff, subset=["Difference (₹)"])
+            .map(_color_diff, subset=["Difference (₹)"])
             .set_properties(**{"text-align":"center"}),
             use_container_width=True, hide_index=True)
         st.markdown("<br>", unsafe_allow_html=True)
