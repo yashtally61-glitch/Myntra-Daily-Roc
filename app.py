@@ -1275,7 +1275,7 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
                        "FBA Fees ₹","Net Total ₹","PWN+10%","PWN+RS50","Difference ₹"]
             st.dataframe(sku_grp.style
                 .format({c:"{:,.2f}" for c in money}, na_rep="—")
-                .applymap(_color_diff, subset=["Difference ₹"])
+                .map(_color_diff, subset=["Difference ₹"])
                 .set_properties(**{"text-align":"center"}),
                 use_container_width=True, hide_index=True,
                 height=min(500, 45+35*len(sku_grp)))
