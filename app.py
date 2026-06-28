@@ -621,10 +621,9 @@ def amz_reconcile(df, sku_map, pwn_map, closed_map):
     df["Comm%"] = df.apply(_comm_pct, axis=1)
 
     def _get_pwn(oms_sku):
-        if oms_sku in closed_map: return closed_map[oms_sku] + 50, closed_map[oms_sku], "Closed"
-        if oms_sku in pwn_map:    return pwn_map[oms_sku] + 50,    pwn_map[oms_sku],    "PWN"
+        if oms_sku in closed_map: return closed_map[oms_sku],      closed_map[oms_sku], "Closed"
+        if oms_sku in pwn_map:    return pwn_map[oms_sku] + 50,     pwn_map[oms_sku],    "PWN"
         return None, None, None
-
     pwn_data       = df["OMS Sku"].apply(_get_pwn)
     df["PWN+RS50"]    = pwn_data.apply(lambda x: x[0])
     df["PWN+10%"]     = pwn_data.apply(lambda x: x[1])
