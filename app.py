@@ -1301,38 +1301,47 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
                 use_container_width=True, hide_index=True,
                 height=min(500, 45+35*len(sku_grp)))
 
-            unmatched_skus = sku_grp[sku_grp["PWN+10%"].isna() | (sku_grp["PWN Source"].isna())]
-            st.caption(f"Debug: {len(sku_grp)} total SKUs · {len(unmatched_skus)} unmatched detected")
+            unmatched_skus = sku_grp[sku_grp["PWN+10%"].isna()].reset_index(drop=True)
 
-            if not unmatched_skus.empty:
+            if len(unmatched_skus) > 0:
                 st.markdown(f'<div class="warn-box">⚠️ <b>{len(unmatched_skus)} SKU(s)</b> '
-                            f'have no PWN price — enter prices manually below.</div>', unsafe_allow_html=True)
+                            f'have no PWN price in the Slab file — enter prices manually below.</div>',
+                            unsafe_allow_html=True)
 
-                try:
-                    manual_edit_df = unmatched_skus[["Seller SKU","OMS SKU","Net Total ₹"]].copy().reset_index(drop=True)
-                    manual_edit_df["Manual PWN+10%"] = 0.0
+                if "a_manual_pwn" not in st.session_state:
+                    st.session_state["a_manual_pwn"] = {}
 
-                    edited_df = st.data_editor(
-                        manual_edit_df,
-                        disabled=["Seller SKU","OMS SKU","Net Total ₹"],
-                        hide_index=True,
-                        use_container_width=True,
-                        key="a_manual_pwn_editor",
+                st.markdown("**Manual PWN+10% entry for unmatched SKUs:**")
+                mc_h1, mc_h2, mc_h3, mc_h4 = st.columns([2.5, 2.5, 1.5, 2])
+                mc_h1.markdown("**Seller SKU**")
+                mc_h2.markdown("**OMS SKU**")
+                mc_h3.markdown("**Net Total ₹**")
+                mc_h4.markdown("**Manual PWN+10% ₹**")
+
+                for _, urow in unmatched_skus.iterrows():
+                    oms_sku = urow["OMS SKU"]
+                    mc1, mc2, mc3, mc4 = st.columns([2.5, 2.5, 1.5, 2])
+                    mc1.write(urow["Seller SKU"])
+                    mc2.write(oms_sku)
+                    mc3.write(f"₹{urow['Net Total ₹']:,.2f}")
+                    val = mc4.number_input(
+                        "manual_pwn", min_value=0.0,
+                        value=float(st.session_state["a_manual_pwn"].get(oms_sku, 0.0)),
+                        step=1.0, format="%.2f",
+                        key=f"manual_pwn_{oms_sku}",
+                        label_visibility="collapsed",
                     )
+                    if val > 0:
+                        st.session_state["a_manual_pwn"][oms_sku] = val
+                    elif oms_sku in st.session_state["a_manual_pwn"]:
+                        del st.session_state["a_manual_pwn"][oms_sku]
 
-                    manual_map = {
-                        row["OMS SKU"]: row["Manual PWN+10%"]
-                        for _, row in edited_df.iterrows()
-                        if row["Manual PWN+10%"] and row["Manual PWN+10%"] > 0
-                    }
-                except Exception as e:
-                    st.error(f"Manual PWN editor failed to load: {e}")
-                    manual_map = {}
+                manual_map = st.session_state["a_manual_pwn"]
 
                 if manual_map:
                     def _apply_manual(row):
                         oms = row["OMS Sku"]
-                        if pd.isna(row.get("_pwn_source")) and oms in manual_map:
+                        if pd.isna(row.get("PWN+10%")) and oms in manual_map:
                             pwn10 = manual_map[oms]
                             row["PWN+10%"]     = pwn10
                             row["PWN+RS50"]    = pwn10 + 50
@@ -1344,7 +1353,7 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
 
                     a_result    = a_result.apply(_apply_manual, axis=1)
                     a_orders_df = a_result[a_result["type"] == "Order"]
-                    st.success(f"✅ Applied manual PWN price to {len(manual_map)} SKU(s). "
+                    st.success(f"✅ Applied manual PWN+10% price to {len(manual_map)} SKU(s). "
                                "Tables and export below now reflect these changes.")
         st.markdown("<br>", unsafe_allow_html=True)
 
