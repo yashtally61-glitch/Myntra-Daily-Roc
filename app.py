@@ -1326,9 +1326,6 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
                 except Exception as e:
                     st.error(f"Manual PWN editor failed to load: {e}")
                     manual_map = {}
-                    for _, row in edited_df.iterrows()
-                    if pd.notna(row["Manual PWN+10%"])
-                }
 
                 if manual_map:
                     def _apply_manual(row):
