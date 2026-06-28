@@ -605,8 +605,13 @@ def amz_reconcile(df, sku_map, pwn_map, closed_map):
     df = df.copy()
     df["OMS Sku"] = df["Sku"].apply(lambda x: sku_map.get(str(x).strip(), str(x).strip()))
     gst_col = "Total sales tax liable(GST before adjusting TCS)"
-    df["Total Sales Amount"] = (df["product sales"] + df[gst_col]).round(2)
-
+    df["Total Sales Amount"] = (
+        df["product sales"]
+        + df["shipping credits"]
+        + df["gift wrap credits"]
+        + df["promotional rebates"]
+        + df[gst_col]
+    ).round(2)
     def _comm_pct(row):
         tsa = row["Total Sales Amount"]
         fee = row.get("selling fees", 0)
@@ -625,7 +630,7 @@ def amz_reconcile(df, sku_map, pwn_map, closed_map):
     df["PWN+10%"]     = pwn_data.apply(lambda x: x[1])
     df["_pwn_source"] = pwn_data.apply(lambda x: x[2])
     total_col         = pd.to_numeric(df["total"], errors="coerce")
-    df["Difference"]  = (total_col - df["PWN+RS50"]).round(2)
+    df["Difference"]  = (df["PWN+RS50"] - total_col).round(2)
     df["_pwn_matched"]= df["_pwn_source"].notna()
     return df
 
