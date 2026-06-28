@@ -746,9 +746,12 @@ def amz_build_excel(result_df, report_label=""):
                              color="15803D" if (diff_val is not None and not np.isnan(float(diff_val if diff_val is not None else 0)) and diff_val>=0) else "B91C1C")
             for ci, col in enumerate(AMZ_EXPORT_COLS, 1):
                 val = row.get(col)
-                if isinstance(val, pd.Timestamp): val = val.strftime("%d %b %Y %H:%M") if not pd.isnull(val) else None
-                elif val is not None and isinstance(val, float) and np.isnan(val): val = None
-                fmt  = "#,##0.00" if ci in AMZ_NUM_CI else None
+                fmt = "#,##0.00" if ci in AMZ_NUM_CI else None
+                if isinstance(val, pd.Timestamp):
+                    val = val.to_pydatetime() if not pd.isnull(val) else None
+                    fmt = "dd-mmm-yyyy hh:mm"
+                elif val is not None and isinstance(val, float) and np.isnan(val):
+                    val = None
                 font = diff_font if ci==29 else nf
                 if ci==6: _acell(ws, ri, ci, val, base_fill, nf, align="left")
                 else: _acell(ws, ri, ci, val, base_fill, font, fmt)
@@ -769,9 +772,12 @@ def amz_build_excel(result_df, report_label=""):
         alt = _A_A1 if ri%2==0 else _A_A2
         for ci, col in enumerate(AMZ_EXPORT_COLS,1):
             val = row.get(col)
-            if isinstance(val, pd.Timestamp): val = val.strftime("%d %b %Y %H:%M") if not pd.isnull(val) else None
-            elif val is not None and isinstance(val, float) and np.isnan(val): val = None
             fmt = "#,##0.00" if ci in AMZ_NUM_CI else None
+            if isinstance(val, pd.Timestamp):
+                val = val.to_pydatetime() if not pd.isnull(val) else None
+                fmt = "dd-mmm-yyyy hh:mm"
+            elif val is not None and isinstance(val, float) and np.isnan(val):
+                val = None
             _acell(ws_all, ri, ci, val, alt, nf, fmt)
     ws_all.freeze_panes = "A2"
     ws_all.auto_filter.ref = f"A1:{get_column_letter(len(AMZ_EXPORT_COLS))}1"
