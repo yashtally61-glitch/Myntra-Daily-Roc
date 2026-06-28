@@ -1277,6 +1277,7 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
         st.markdown("<br>", unsafe_allow_html=True)
 
         # ── SKU-level summary (Orders) ─────────────────────────────────────────
+        # ── SKU-level summary (Orders) ─────────────────────────────────────────
         st.markdown('<div class="section-header">🔍 SKU-Level Detail (Orders)</div>', unsafe_allow_html=True)
         if not a_orders_df.empty:
             sku_grp = a_orders_df.groupby(["Sku","OMS Sku","_pwn_source"]).agg(
@@ -1303,7 +1304,47 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
             unmatched_skus = sku_grp[sku_grp["PWN Source"].isna()]
             if not unmatched_skus.empty:
                 st.markdown(f'<div class="warn-box">⚠️ <b>{len(unmatched_skus)} SKU(s)</b> '
-                            f'have no PWN price — check OMS SKU in Slab file.</div>', unsafe_allow_html=True)
+                            f'have no PWN price — enter prices manually below.</div>', unsafe_allow_html=True)
+
+                manual_edit_df = unmatched_skus[["Seller SKU","OMS SKU","Net Total ₹"]].copy()
+                manual_edit_df["Manual PWN+10%"] = None
+
+                edited_df = st.data_editor(
+                    manual_edit_df,
+                    column_config={
+                        "Seller SKU":     st.column_config.TextColumn(disabled=True),
+                        "OMS SKU":        st.column_config.TextColumn(disabled=True),
+                        "Net Total ₹":    st.column_config.NumberColumn(disabled=True, format="%.2f"),
+                        "Manual PWN+10%": st.column_config.NumberColumn(
+                            help="Enter PWN+10% price manually. PWN+RS50 = this + ₹50.",
+                            min_value=0.0, step=1.0, format="%.2f"),
+                    },
+                    hide_index=True, use_container_width=True, key="a_manual_pwn_editor",
+                )
+
+                manual_map = {
+                    row["OMS SKU"]: row["Manual PWN+10%"]
+                    for _, row in edited_df.iterrows()
+                    if pd.notna(row["Manual PWN+10%"])
+                }
+
+                if manual_map:
+                    def _apply_manual(row):
+                        oms = row["OMS Sku"]
+                        if pd.isna(row.get("_pwn_source")) and oms in manual_map:
+                            pwn10 = manual_map[oms]
+                            row["PWN+10%"]     = pwn10
+                            row["PWN+RS50"]    = pwn10 + 50
+                            row["_pwn_source"] = "Manual"
+                            net = pd.to_numeric(row.get("total"), errors="coerce")
+                            row["Difference"]  = round(net - row["PWN+RS50"], 2) if pd.notna(net) else None
+                            row["_pwn_matched"] = True
+                        return row
+
+                    a_result    = a_result.apply(_apply_manual, axis=1)
+                    a_orders_df = a_result[a_result["type"] == "Order"]
+                    st.success(f"✅ Applied manual PWN price to {len(manual_map)} SKU(s). "
+                               "Tables and export below now reflect these changes.")
         st.markdown("<br>", unsafe_allow_html=True)
 
         # ── Transaction detail tabs ────────────────────────────────────────────
