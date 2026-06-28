@@ -1329,7 +1329,7 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
 
                     st.dataframe(disp.style
                         .format({c:"{:,.2f}" for c in NUM_DISP if c in disp.columns}, na_rep="—")
-                        .applymap(_color_diff, subset=["Difference ₹"] if "Difference ₹" in disp.columns else [])
+                        .map(_color_diff, subset=["Difference ₹"] if "Difference ₹" in disp.columns else [])
                         .set_properties(**{"text-align":"center"}),
                         use_container_width=True, hide_index=True,
                         height=min(450, 45+35*len(disp)))
