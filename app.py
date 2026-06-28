@@ -630,7 +630,7 @@ def amz_reconcile(df, sku_map, pwn_map, closed_map):
     df["PWN+10%"]     = pwn_data.apply(lambda x: x[1])
     df["_pwn_source"] = pwn_data.apply(lambda x: x[2])
     total_col         = pd.to_numeric(df["total"], errors="coerce")
-    df["Difference"]  = (df["PWN+RS50"] - total_col).round(2)
+    df["Difference"]  = (total_col - df["PWN+10%"]).round(2)
     df["_pwn_matched"]= df["_pwn_source"].notna()
     return df
 
