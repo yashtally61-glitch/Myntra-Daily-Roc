@@ -595,6 +595,8 @@ def amz_load_csv(file_bytes, filename):
         if c in df.columns:
             df[c] = pd.to_numeric(df[c].astype(str).str.replace(",",""), errors="coerce").fillna(0.0)
     df["date/time"] = pd.to_datetime(df["date/time"], errors="coerce", dayfirst=True)
+    if pd.api.types.is_datetime64tz_dtype(df["date/time"]):
+        df["date/time"] = df["date/time"].dt.tz_localize(None)
     df["Sku"]       = df["Sku"].astype(str).str.strip()
     return df
 
@@ -748,6 +750,7 @@ def amz_build_excel(result_df, report_label=""):
                 val = row.get(col)
                 fmt = "#,##0.00" if ci in AMZ_NUM_CI else None
                 if isinstance(val, pd.Timestamp):
+                    val = val.tz_localize(None) if val.tzinfo is not None else val
                     val = val.to_pydatetime() if not pd.isnull(val) else None
                     fmt = "dd-mmm-yyyy hh:mm"
                 elif val is not None and isinstance(val, float) and np.isnan(val):
@@ -774,8 +777,9 @@ def amz_build_excel(result_df, report_label=""):
             val = row.get(col)
             fmt = "#,##0.00" if ci in AMZ_NUM_CI else None
             if isinstance(val, pd.Timestamp):
-                val = val.to_pydatetime() if not pd.isnull(val) else None
-                fmt = "dd-mmm-yyyy hh:mm"
+                    val = val.tz_localize(None) if val.tzinfo is not None else val
+                    val = val.to_pydatetime() if not pd.isnull(val) else None
+                    fmt = "dd-mmm-yyyy hh:mm"
             elif val is not None and isinstance(val, float) and np.isnan(val):
                 val = None
             _acell(ws_all, ri, ci, val, alt, nf, fmt)
