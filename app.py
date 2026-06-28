@@ -1301,7 +1301,9 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
                 use_container_width=True, hide_index=True,
                 height=min(500, 45+35*len(sku_grp)))
 
-            unmatched_skus = sku_grp[sku_grp["PWN Source"].isna()]
+            unmatched_skus = sku_grp[sku_grp["PWN+10%"].isna() | (sku_grp["PWN Source"].isna())]
+            st.caption(f"Debug: {len(sku_grp)} total SKUs · {len(unmatched_skus)} unmatched detected")
+
             if not unmatched_skus.empty:
                 st.markdown(f'<div class="warn-box">⚠️ <b>{len(unmatched_skus)} SKU(s)</b> '
                             f'have no PWN price — enter prices manually below.</div>', unsafe_allow_html=True)
