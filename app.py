@@ -620,16 +620,33 @@ def amz_reconcile(df, sku_map, pwn_map, closed_map):
 
     df["Comm%"] = df.apply(_comm_pct, axis=1)
 
-    def _get_pwn(oms_sku):
-        if oms_sku in closed_map: return closed_map[oms_sku],      closed_map[oms_sku], "Closed"
-        if oms_sku in pwn_map:    return pwn_map[oms_sku] + 50,     pwn_map[oms_sku],    "PWN"
+    def _get_pwn(seller_sku, oms_sku):
+        # 1) Try the Seller SKU exactly as it appears in the transaction file
+        s_key = str(seller_sku).strip()
+        if s_key in closed_map: return closed_map[s_key],          closed_map[s_key], "Closed"
+        if s_key in pwn_map:    return pwn_map[s_key] + 50,         pwn_map[s_key],    "PWN"
+        # 2) Fall back to the OMS SKU (via Replace Sku mapping)
+        o_key = str(oms_sku).strip()
+        if o_key != s_key:
+            if o_key in closed_map: return closed_map[o_key],       closed_map[o_key], "Closed"
+            if o_key in pwn_map:    return pwn_map[o_key] + 50,      pwn_map[o_key],    "PWN"
+        # 3) Not found anywhere -- needs manual entry
         return None, None, None
-    pwn_data       = df["OMS Sku"].apply(_get_pwn)
-    df["PWN+RS50"]    = pwn_data.apply(lambda x: x[0])
-    df["PWN+10%"]     = pwn_data.apply(lambda x: x[1])
+
+    pwn_data       = df.apply(lambda r: _get_pwn(r["Sku"], r["OMS Sku"]), axis=1)
+    df["PWN+RS50"]    = pwn_data.apply(lambda x: x[0])   # per-unit PWN+10% + ₹50
+    df["PWN+10%"]     = pwn_data.apply(lambda x: x[1])   # per-unit PWN+10% price
     df["_pwn_source"] = pwn_data.apply(lambda x: x[2])
+
+    # Quantity-adjusted target price -- PWN+RS50 must be multiplied by quantity,
+    # otherwise multi-quantity order lines get compared against a single-unit price.
+    qty_num = pd.to_numeric(df["quantity"], errors="coerce").fillna(1)
+    qty_num = qty_num.where(qty_num > 0, 1)
+    df["_qty_num"]          = qty_num
+    df["PWN+RS50 (Total)"]  = (df["PWN+RS50"] * qty_num).round(2)
+
     total_col         = pd.to_numeric(df["total"], errors="coerce")
-    df["Difference"]  = (total_col - df["PWN+RS50"]).round(2)
+    df["Difference"]  = (total_col - df["PWN+RS50 (Total)"]).round(2)
     df["_pwn_matched"]= df["_pwn_source"].notna()
     return df
 
@@ -643,7 +660,7 @@ AMZ_EXPORT_COLS = [
     "Total sales tax liable(GST before adjusting TCS)",
     "Total Sales Amount","selling fees","fba fees","other transaction fees","other",
     "TCS-CGST","TCS-SGST","TCS-IGST","TDS (Section 194-O)",
-    "total","Comm%","PWN+10%","PWN+RS50","Difference",
+    "total","Comm%","PWN+10%","PWN+RS50","PWN+RS50 (Total)","Difference",
     "Transaction Status","Transaction Release Date","_pwn_source",
 ]
 AMZ_COL_HEADERS = [
@@ -652,13 +669,13 @@ AMZ_COL_HEADERS = [
     "Product Sales","Shipping Credits","Gift Wrap","Promo Rebates","GST",
     "Total Sales Amt","Selling Fees","FBA Fees","Other Txn Fees","Other",
     "TCS-CGST","TCS-SGST","TCS-IGST","TDS (194-O)",
-    "Net Total","Comm %","PWN+10%","PWN+RS50","Difference",
+    "Net Total","Comm %","PWN+10% (unit)","PWN+RS50 (unit)","PWN+RS50 (Total)","Difference",
     "Txn Status","Release Date","PWN Source",
 ]
 AMZ_COL_WIDTHS = [
     20,12,22,22,22,40,6,10,14,14,
     13,13,10,13,10,14,12,10,14,10,
-    10,10,10,12,12,9,12,12,12,12,20,12,
+    10,10,10,12,12,9,14,14,16,12,12,20,12,
 ]
 
 _A_HF = PatternFill("solid", fgColor="14532D")
@@ -669,7 +686,7 @@ _A_A1 = PatternFill("solid", fgColor="F0FDF4")
 _A_A2 = PatternFill("solid", fgColor="FFFFFF")
 _A_TB = Border(left=Side(style="thin",color="BBF7D0"), right=Side(style="thin",color="BBF7D0"),
                top=Side(style="thin",color="BBF7D0"),  bottom=Side(style="thin",color="BBF7D0"))
-AMZ_NUM_CI = {11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,27,28,29}
+AMZ_NUM_CI = {11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,27,28,29,30}
 
 
 def _acell(ws, r, c, val, fill, font=None, fmt=None, align="center"):
@@ -714,7 +731,7 @@ def amz_build_excel(result_df, report_label=""):
                  round(sub["other transaction fees"].sum(),2),
                  round(tcs,2), round(tds,2),
                  round(pd.to_numeric(sub["total"],errors="coerce").sum(),2),
-                 round(sub["PWN+RS50"].sum(),2) if "PWN+RS50" in sub else 0,
+                 round(sub["PWN+RS50 (Total)"].sum(),2) if "PWN+RS50 (Total)" in sub else 0,
                  round(sub["Difference"].sum(),2) if "Difference" in sub else 0]
         alt = _A_A1 if ri%2==0 else _A_A2
         for ci,v in enumerate(rv,1):
@@ -759,7 +776,7 @@ def amz_build_excel(result_df, report_label=""):
                     fmt = "dd-mmm-yyyy hh:mm"
                 elif val is not None and isinstance(val, float) and np.isnan(val):
                     val = None
-                font = diff_font if ci==29 else nf
+                font = diff_font if ci==30 else nf
                 if ci==6: _acell(ws, ri, ci, val, base_fill, nf, align="left")
                 else: _acell(ws, ri, ci, val, base_fill, font, fmt)
         ws.freeze_panes = "A2"
@@ -1158,7 +1175,7 @@ with tab_amazon:
 <b>Logic:</b> Map Seller SKU → OMS SKU (Replace Sku) &nbsp;·&nbsp;
 Total Sales Amt = Product Sales + GST &nbsp;·&nbsp;
 PWN+RS50 = PWN+10% + ₹50 &nbsp;·&nbsp;
-Difference = Net Total − PWN+RS50
+Difference = Net Total − (PWN+RS50 × Qty)
 </div>""", unsafe_allow_html=True)
 
     if not a_slab_file or not a_csv_files:
@@ -1229,7 +1246,7 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
             ("PWN Matched",        f"{a_pwn_match}/{a_total_orders}",
              "positive" if a_pwn_match>0 else None, "orders with target price"),
             ("Total Difference",   f"₹{a_total_diff:,.0f}",
-             "positive" if a_total_diff>=0 else "negative", "Net − PWN+RS50 (Orders)"),
+             "positive" if a_total_diff>=0 else "negative", "Net − (PWN+RS50 × Qty)"),
         ]
         for col, (label, value, cls, sub) in zip(cols, a_kpis):
             with col:
@@ -1286,14 +1303,17 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
                 Selling_Fees=("selling fees","sum"), FBA_Fees=("fba fees","sum"),
                 Net_Total=("total", lambda x: pd.to_numeric(x,errors="coerce").sum()),
                 PWN10=("PWN+10%","first"), PWNRS50=("PWN+RS50","first"),
+                PWNRS50_Total=("PWN+RS50 (Total)","sum"),
                 Difference=("Difference","sum"),
             ).reset_index()
             sku_grp.columns = ["Seller SKU","OMS SKU","PWN Source","Qty",
                                "Product Sales ₹","Total Sales Amt ₹","Selling Fees ₹",
-                               "FBA Fees ₹","Net Total ₹","PWN+10%","PWN+RS50","Difference ₹"]
+                               "FBA Fees ₹","Net Total ₹","PWN+10%","PWN+RS50 (unit)",
+                               "PWN+RS50 (Total)","Difference ₹"]
             sku_grp = sku_grp.sort_values("Net Total ₹", ascending=False)
             money   = ["Product Sales ₹","Total Sales Amt ₹","Selling Fees ₹",
-                       "FBA Fees ₹","Net Total ₹","PWN+10%","PWN+RS50","Difference ₹"]
+                       "FBA Fees ₹","Net Total ₹","PWN+10%","PWN+RS50 (unit)",
+                       "PWN+RS50 (Total)","Difference ₹"]
             st.dataframe(sku_grp.style
                 .format({c:"{:,.2f}" for c in money}, na_rep="—")
                 .map(_color_diff, subset=["Difference ₹"])
@@ -1305,7 +1325,8 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
 
             if len(unmatched_skus) > 0:
                 st.markdown(f'<div class="warn-box">⚠️ <b>{len(unmatched_skus)} SKU(s)</b> '
-                            f'have no PWN price in the Slab file — enter prices manually below.</div>',
+                            f'have no PWN price in the Slab file (checked Seller SKU then OMS SKU) — '
+                            f'enter prices manually below.</div>',
                             unsafe_allow_html=True)
 
                 if "a_manual_pwn" not in st.session_state:
@@ -1316,39 +1337,46 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
                 mc_h1.markdown("**Seller SKU**")
                 mc_h2.markdown("**OMS SKU**")
                 mc_h3.markdown("**Net Total ₹**")
-                mc_h4.markdown("**Manual PWN+10% ₹**")
+                mc_h4.markdown("**Manual PWN+10% ₹ (per unit)**")
 
                 for _, urow in unmatched_skus.iterrows():
-                    oms_sku = urow["OMS SKU"]
+                    seller_sku = urow["Seller SKU"]
+                    oms_sku    = urow["OMS SKU"]
+                    map_key    = f"{seller_sku}||{oms_sku}"
                     mc1, mc2, mc3, mc4 = st.columns([2.5, 2.5, 1.5, 2])
-                    mc1.write(urow["Seller SKU"])
+                    mc1.write(seller_sku)
                     mc2.write(oms_sku)
                     mc3.write(f"₹{urow['Net Total ₹']:,.2f}")
                     val = mc4.number_input(
                         "manual_pwn", min_value=0.0,
-                        value=float(st.session_state["a_manual_pwn"].get(oms_sku, 0.0)),
+                        value=float(st.session_state["a_manual_pwn"].get(map_key, 0.0)),
                         step=1.0, format="%.2f",
-                        key=f"manual_pwn_{oms_sku}",
+                        key=f"manual_pwn_{map_key}",
                         label_visibility="collapsed",
                     )
                     if val > 0:
-                        st.session_state["a_manual_pwn"][oms_sku] = val
-                    elif oms_sku in st.session_state["a_manual_pwn"]:
-                        del st.session_state["a_manual_pwn"][oms_sku]
+                        st.session_state["a_manual_pwn"][map_key] = val
+                    elif map_key in st.session_state["a_manual_pwn"]:
+                        del st.session_state["a_manual_pwn"][map_key]
 
                 manual_map = st.session_state["a_manual_pwn"]
 
                 if manual_map:
                     def _apply_manual(row):
-                        oms = row["OMS Sku"]
-                        if pd.isna(row.get("PWN+10%")) and oms in manual_map:
-                            pwn10 = manual_map[oms]
-                            row["PWN+10%"]     = pwn10
-                            row["PWN+RS50"]    = pwn10 + 50
-                            row["_pwn_source"] = "Manual"
+                        map_key = f"{row['Sku']}||{row['OMS Sku']}"
+                        if pd.isna(row.get("PWN+10%")) and map_key in manual_map:
+                            pwn10 = manual_map[map_key]
+                            qty   = row.get("quantity", 1)
+                            try: qty = float(qty)
+                            except Exception: qty = 1.0
+                            if not qty or qty <= 0: qty = 1.0
+                            row["PWN+10%"]           = pwn10
+                            row["PWN+RS50"]          = pwn10 + 50
+                            row["PWN+RS50 (Total)"]  = round((pwn10 + 50) * qty, 2)
+                            row["_pwn_source"]       = "Manual"
                             net = pd.to_numeric(row.get("total"), errors="coerce")
-                            row["Difference"]  = round(net - row["PWN+RS50"], 2) if pd.notna(net) else None
-                            row["_pwn_matched"] = True
+                            row["Difference"]        = round(net - row["PWN+RS50 (Total)"], 2) if pd.notna(net) else None
+                            row["_pwn_matched"]      = True
                         return row
 
                     a_result    = a_result.apply(_apply_manual, axis=1)
@@ -1369,12 +1397,14 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
             ("product sales","Product Sales ₹"),("Total Sales Amount","Total Sales Amt ₹"),
             ("selling fees","Selling Fees ₹"),("fba fees","FBA Fees ₹"),
             ("total","Net Total ₹"),("Comm%","Comm %"),
-            ("PWN+10%","PWN+10% ₹"),("PWN+RS50","PWN+RS50 ₹"),
+            ("PWN+10%","PWN+10% ₹"),("PWN+RS50","PWN+RS50 (unit) ₹"),
+            ("PWN+RS50 (Total)","PWN+RS50 (Total) ₹"),
             ("Difference","Difference ₹"),("_pwn_source","PWN Source"),
             ("Transaction Status","Status"),
         ]
         NUM_DISP = {"Product Sales ₹","Total Sales Amt ₹","Selling Fees ₹","FBA Fees ₹",
-                    "Net Total ₹","PWN+10% ₹","PWN+RS50 ₹","Difference ₹","Comm %"}
+                    "Net Total ₹","PWN+10% ₹","PWN+RS50 (unit) ₹","PWN+RS50 (Total) ₹",
+                    "Difference ₹","Comm %"}
 
         if active_types:
             a_inner_tabs = st.tabs([f"  {t}  " for t in active_types])
@@ -1425,6 +1455,6 @@ Amazon Custom Unified Transaction export from Seller Central. Multiple files mer
             st.markdown("""<div class="info-box-green">
 Excel export: <b>Summary</b> sheet + one sheet per transaction type + <b>All Transactions</b>.<br>
 🟢 Green = PWN matched &nbsp;·&nbsp; 🟡 Yellow = no PWN &nbsp;·&nbsp; 🔴 Red = Closed price.<br>
-<b>Difference</b> = Net Total − PWN+RS50 (positive = above target).</div>""",
+<b>Difference</b> = Net Total − (PWN+RS50 × Qty).</div>""",
                 unsafe_allow_html=True)
         st.markdown("<br><br>", unsafe_allow_html=True)
