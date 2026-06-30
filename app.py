@@ -698,6 +698,59 @@ def _acell(ws, r, c, val, fill, font=None, fmt=None, align="center"):
     return cell
 
 
+def _amz_formula_cols():
+    """Column letters (within AMZ_EXPORT_COLS layout) used to build live Excel formulas."""
+    idx = lambda name: AMZ_EXPORT_COLS.index(name) + 1
+    return dict(
+        qty   = get_column_letter(idx("quantity")),
+        ps    = get_column_letter(idx("product sales")),
+        ship  = get_column_letter(idx("shipping credits")),
+        gift  = get_column_letter(idx("gift wrap credits")),
+        promo = get_column_letter(idx("promotional rebates")),
+        gst   = get_column_letter(idx("Total sales tax liable(GST before adjusting TCS)")),
+        tsa   = get_column_letter(idx("Total Sales Amount")),
+        sf    = get_column_letter(idx("selling fees")),
+        total = get_column_letter(idx("total")),
+        comm  = get_column_letter(idx("Comm%")),
+        pwn10 = get_column_letter(idx("PWN+10%")),
+        pwn50 = get_column_letter(idx("PWN+RS50")),
+        pwn50t= get_column_letter(idx("PWN+RS50 (Total)")),
+        diff  = get_column_letter(idx("Difference")),
+    )
+
+_AMZ_FCOL = _amz_formula_cols()
+_AMZ_FCOL_IDX = {
+    "tsa":  AMZ_EXPORT_COLS.index("Total Sales Amount") + 1,
+    "comm": AMZ_EXPORT_COLS.index("Comm%") + 1,
+    "pwn50": AMZ_EXPORT_COLS.index("PWN+RS50") + 1,
+    "pwn50t": AMZ_EXPORT_COLS.index("PWN+RS50 (Total)") + 1,
+    "diff": AMZ_EXPORT_COLS.index("Difference") + 1,
+}
+
+
+def _write_amz_row_formulas(ws, ri):
+    """Overwrite the derived/computed cells in a data row with live Excel formulas
+    so PWN+10%, quantity, etc. can be edited directly in the sheet and everything
+    downstream (PWN+RS50, PWN+RS50 x Qty, Difference) recalculates automatically."""
+    c = _AMZ_FCOL
+    f_tsa  = f'={c["ps"]}{ri}+{c["ship"]}{ri}+{c["gift"]}{ri}+{c["promo"]}{ri}+{c["gst"]}{ri}'
+    f_comm = f'=IF({c["tsa"]}{ri}=0,"",ROUND({c["sf"]}{ri}/{c["tsa"]}{ri}*100,2))'
+    f_pwn50  = f'=IF({c["pwn10"]}{ri}="","",{c["pwn10"]}{ri}+50)'
+    f_pwn50t = f'=IF({c["pwn50"]}{ri}="","",{c["pwn50"]}{ri}*{c["qty"]}{ri})'
+    f_diff   = f'=IF({c["pwn50t"]}{ri}="","",{c["total"]}{ri}-{c["pwn50t"]}{ri})'
+
+    ws.cell(row=ri, column=_AMZ_FCOL_IDX["tsa"]).value           = f_tsa
+    ws.cell(row=ri, column=_AMZ_FCOL_IDX["tsa"]).number_format   = "#,##0.00"
+    ws.cell(row=ri, column=_AMZ_FCOL_IDX["comm"]).value          = f_comm
+    ws.cell(row=ri, column=_AMZ_FCOL_IDX["comm"]).number_format  = "0.00"
+    ws.cell(row=ri, column=_AMZ_FCOL_IDX["pwn50"]).value         = f_pwn50
+    ws.cell(row=ri, column=_AMZ_FCOL_IDX["pwn50"]).number_format = "#,##0.00"
+    ws.cell(row=ri, column=_AMZ_FCOL_IDX["pwn50t"]).value        = f_pwn50t
+    ws.cell(row=ri, column=_AMZ_FCOL_IDX["pwn50t"]).number_format= "#,##0.00"
+    ws.cell(row=ri, column=_AMZ_FCOL_IDX["diff"]).value          = f_diff
+    ws.cell(row=ri, column=_AMZ_FCOL_IDX["diff"]).number_format  = "#,##0.00"
+
+
 def amz_build_excel(result_df, report_label=""):
     wb   = Workbook()
     hf   = Font(bold=True, color="FFFFFF", size=10, name="Calibri")
@@ -779,10 +832,11 @@ def amz_build_excel(result_df, report_label=""):
                 font = diff_font if ci==30 else nf
                 if ci==6: _acell(ws, ri, ci, val, base_fill, nf, align="left")
                 else: _acell(ws, ri, ci, val, base_fill, font, fmt)
+            _write_amz_row_formulas(ws, ri)
         ws.freeze_panes = "A2"
         ws.auto_filter.ref = f"A1:{get_column_letter(len(AMZ_EXPORT_COLS))}1"
         nr = len(sub)+3
-        nc = ws.cell(row=nr,column=1,value="🟢 Green=PWN matched · 🟡 Yellow=No match · 🔴 Red=Closed · Difference=Net Total−PWN+RS50")
+        nc = ws.cell(row=nr,column=1,value="🟢 Green=PWN matched · 🟡 Yellow=No match · 🔴 Red=Closed · Difference=Net Total−(PWN+RS50×Qty) — live formulas, editable PWN+10%/Qty")
         nc.font = Font(bold=True,italic=True,size=9,color="14532D",name="Calibri")
         nc.fill = PatternFill("solid",fgColor="DCFCE7")
         ws.merge_cells(f"A{nr}:{get_column_letter(len(AMZ_EXPORT_COLS))}{nr}")
@@ -804,6 +858,7 @@ def amz_build_excel(result_df, report_label=""):
             elif val is not None and isinstance(val, float) and np.isnan(val):
                 val = None
             _acell(ws_all, ri, ci, val, alt, nf, fmt)
+        _write_amz_row_formulas(ws_all, ri)
     ws_all.freeze_panes = "A2"
     ws_all.auto_filter.ref = f"A1:{get_column_letter(len(AMZ_EXPORT_COLS))}1"
 
