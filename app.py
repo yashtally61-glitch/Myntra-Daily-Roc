@@ -213,34 +213,65 @@ def myntra_load_slab(file_bytes):
     return rates, oms_map, yrn_map, pwn_map, closed_map, slab_issues
 
 
+def _parse_date_cell(v):
+    if isinstance(v, datetime): return v.date()
+    if v is None or (isinstance(v, str) and not v.strip()): return None
+    try: return pd.to_datetime(v).date()
+    except Exception: return None
+
+
 @st.cache_data(show_spinner=False)
 def myntra_load_fix_rate(file_bytes):
+    """Loads the 'Fix Rate' sheet (style-level rate overrides) and, if present,
+    the 'Rebate' sheet (style-level rebate amounts for a date window) from the
+    same workbook. Returns (fix_df, rebate_df) — rebate_df is empty if the
+    workbook has no 'Rebate' tab."""
     import openpyxl
     wb  = openpyxl.load_workbook(BytesIO(file_bytes), data_only=True)
-    ws  = wb.active
+
+    # ── Fix Rate sheet ───────────────────────────────────────────────────────
+    ws  = wb["Fix Rate"] if "Fix Rate" in wb.sheetnames else wb.active
     rows = list(ws.iter_rows(min_row=1, values_only=True))
     if not rows:
-        return pd.DataFrame()
-    header = [str(c).strip() if c is not None else f"col_{i}" for i, c in enumerate(rows[0])]
-    df = pd.DataFrame(rows[1:], columns=header)
-    required = ["Brand Name","Style Id","Start Date","End Date","GT Charge","Commission","Fixed fee"]
-    missing  = [c for c in required if c not in df.columns]
-    if missing:
-        raise ValueError(f"Fix Rate sheet missing columns: {', '.join(missing)}")
-    df = df.dropna(how="all").reset_index(drop=True)
-    df["Brand Name"] = df["Brand Name"].astype(str).str.strip()
-    df["Style Id"]   = pd.to_numeric(df["Style Id"],   errors="coerce")
-    df["GT Charge"]  = pd.to_numeric(df["GT Charge"],  errors="coerce").fillna(0)
-    df["Commission"] = pd.to_numeric(df["Commission"], errors="coerce").fillna(0)
-    df["Fixed fee"]  = pd.to_numeric(df["Fixed fee"],  errors="coerce").fillna(0)
-    def _to_date(v):
-        if isinstance(v, datetime): return v.date()
-        if v is None or (isinstance(v, str) and not v.strip()): return None
-        try: return pd.to_datetime(v).date()
-        except: return None
-    df["Start Date"] = df["Start Date"].apply(_to_date)
-    df["End Date"]   = df["End Date"].apply(_to_date)
-    return df[df["Style Id"].notna()].reset_index(drop=True)
+        fix_df = pd.DataFrame()
+    else:
+        header = [str(c).strip() if c is not None else f"col_{i}" for i, c in enumerate(rows[0])]
+        df = pd.DataFrame(rows[1:], columns=header)
+        required = ["Brand Name","Style Id","Start Date","End Date","GT Charge","Commission","Fixed fee"]
+        missing  = [c for c in required if c not in df.columns]
+        if missing:
+            raise ValueError(f"Fix Rate sheet missing columns: {', '.join(missing)}")
+        df = df.dropna(how="all").reset_index(drop=True)
+        df["Brand Name"] = df["Brand Name"].astype(str).str.strip()
+        df["Style Id"]   = pd.to_numeric(df["Style Id"],   errors="coerce")
+        df["GT Charge"]  = pd.to_numeric(df["GT Charge"],  errors="coerce").fillna(0)
+        df["Commission"] = pd.to_numeric(df["Commission"], errors="coerce").fillna(0)
+        df["Fixed fee"]  = pd.to_numeric(df["Fixed fee"],  errors="coerce").fillna(0)
+        df["Start Date"] = df["Start Date"].apply(_parse_date_cell)
+        df["End Date"]   = df["End Date"].apply(_parse_date_cell)
+        fix_df = df[df["Style Id"].notna()].reset_index(drop=True)
+
+    # ── Rebate sheet (optional) ──────────────────────────────────────────────
+    rebate_df = pd.DataFrame()
+    if "Rebate" in wb.sheetnames:
+        rws   = wb["Rebate"]
+        rrows = list(rws.iter_rows(min_row=1, values_only=True))
+        if rrows:
+            rheader = [str(c).strip() if c is not None else f"col_{i}" for i, c in enumerate(rrows[0])]
+            rdf = pd.DataFrame(rrows[1:], columns=rheader)
+            r_required = ["Brand Name","Style Id","Start Date","End Date","Rebate"]
+            r_missing  = [c for c in r_required if c not in rdf.columns]
+            if r_missing:
+                raise ValueError(f"Rebate sheet missing columns: {', '.join(r_missing)}")
+            rdf = rdf.dropna(how="all").reset_index(drop=True)
+            rdf["Brand Name"] = rdf["Brand Name"].astype(str).str.strip()
+            rdf["Style Id"]   = pd.to_numeric(rdf["Style Id"], errors="coerce")
+            rdf["Rebate"]     = pd.to_numeric(rdf["Rebate"],   errors="coerce").fillna(0)
+            rdf["Start Date"] = rdf["Start Date"].apply(_parse_date_cell)
+            rdf["End Date"]   = rdf["End Date"].apply(_parse_date_cell)
+            rebate_df = rdf[rdf["Style Id"].notna()].reset_index(drop=True)
+
+    return fix_df, rebate_df
 
 
 @st.cache_data(show_spinner=False)
@@ -312,6 +343,30 @@ def get_fix_rate_row(fix_df, brand, style_id, order_date):
     return sub.iloc[0]
 
 
+def get_rebate_amount(rebate_df, brand, style_id, order_date):
+    """Looks up the Rebate sheet by Brand Name + Style Id, and only applies the
+    rebate if order_date falls inside that row's [Start Date, End Date] window.
+    Returns 0.0 when there's no rebate tab, no matching brand/style, or the
+    order date is outside every listed window."""
+    if rebate_df is None or rebate_df.empty:
+        return 0.0
+    try:
+        sid = int(float(style_id))
+    except Exception:
+        return 0.0
+    brand_str = str(brand).strip()
+    sub = rebate_df[(rebate_df["Brand Name"] == brand_str) & (rebate_df["Style Id"] == sid)]
+    if sub.empty:
+        return 0.0
+    if order_date is not None:
+        dated = sub[sub["Start Date"].notna() & sub["End Date"].notna() &
+                    (sub["Start Date"] <= order_date) & (sub["End Date"] >= order_date)]
+        if not dated.empty:
+            return round(float(dated.iloc[0]["Rebate"]), 2)
+        return 0.0
+    return round(float(sub.iloc[0]["Rebate"]), 2)
+
+
 def myntra_get_pwn(oms_map, yrn_map, pwn_map, closed_map, seller_sku, myntra_sku=""):
     key     = str(seller_sku).strip()
     mkey    = str(myntra_sku).strip()
@@ -324,7 +379,7 @@ def myntra_get_pwn(oms_map, yrn_map, pwn_map, closed_map, seller_sku, myntra_sku
 
 
 def myntra_reconcile(rates, df, oms_map, yrn_map, pwn_map, closed_map,
-                     fix_df=None, report_date=None, brand_filter=None, brand_cfg=None):
+                     fix_df=None, rebate_df=None, report_date=None, brand_filter=None, brand_cfg=None):
     df = df.copy()
     df["brand"]        = df["brand"].astype(str).str.strip()
     df["article type"] = df["article type"].astype(str).str.strip()
@@ -366,6 +421,11 @@ def myntra_reconcile(rates, df, oms_map, yrn_map, pwn_map, closed_map,
                            _myntra_payable=myntra_pay, _marketing=marketing,
                            _return_ch=return_ch, _royalty=royalty,
                            _slab_ok=True, _rate_source="Slab")
+        # Rebate is looked up independently of rate source (Fix Rate vs Slab):
+        # matched purely on Brand + Style Id + the order/report date falling
+        # inside the rebate window. It does not alter GT/Commission/Fixed Fee/
+        # GST/Payable — those keep exactly the same calculation as before.
+        rec["_rebate"] = get_rebate_amount(rebate_df, brand, sid, report_date)
         pwn_price, oms_sku, pwn_source = myntra_get_pwn(
             oms_map, yrn_map, pwn_map, closed_map,
             row.get("seller sku code",""), row.get("myntra sku code",""))
@@ -395,6 +455,7 @@ _M_AF = PatternFill("solid", fgColor="FFF9E6")
 _M_BF = PatternFill("solid", fgColor="DEEAF1")
 _M_A1 = PatternFill("solid", fgColor="EBF3FA")
 _M_A2 = PatternFill("solid", fgColor="FFFFFF")
+_M_RF = PatternFill("solid", fgColor="E9D5FF")
 _M_TB = Border(left=Side(style="thin",color="B8CCE4"), right=Side(style="thin",color="B8CCE4"),
                top=Side(style="thin",color="B8CCE4"),  bottom=Side(style="thin",color="B8CCE4"))
 
@@ -421,6 +482,7 @@ def myntra_build_excel(result_df, report_date_str="", brand_cfg=None):
         ofont = Font(size=9, name="Calibri", italic=True, color="C55A11")
         gfont = Font(bold=True, size=9, name="Calibri", color="375623")
         ffont = Font(bold=True, size=9, name="Calibri", color="7B4F00")
+        rfont2= Font(bold=True, size=9, name="Calibri", color="6B21A8")
 
         cfg      = brand_cfg.get(brand, {})
         mkt_type = cfg.get("mkt_type", DEFAULT_MARKETING_TYPE)
@@ -440,12 +502,14 @@ def myntra_build_excel(result_df, report_date_str="", brand_cfg=None):
         ws.row_dimensions[1].height = 36
 
         for ri, (_, row) in enumerate(bdf.iterrows(), 2):
-            is_fix = row.get("_rate_source") == "Fix Rate"
-            alt    = _M_AF if is_fix else (_M_A1 if ri % 2 == 0 else _M_A2)
+            is_fix    = row.get("_rate_source") == "Fix Rate"
+            rebate_v  = row.get("_rebate", 0) or 0
+            has_rebate= rebate_v not in (0, 0.0, None)
+            alt    = _M_RF if has_rebate else (_M_AF if is_fix else (_M_A1 if ri % 2 == 0 else _M_A2))
             SP     = row.get("final amount", 0)
             V      = row.get("_V")
             gst_v  = row.get("_gst")
-            rfont  = ffont if is_fix else nfont
+            rfont  = rfont2 if has_rebate else (ffont if is_fix else nfont)
 
             vals = [
                 row.get("order release id",""), row.get("order line id",""),
@@ -458,7 +522,7 @@ def myntra_build_excel(result_df, report_date_str="", brand_cfg=None):
                 row.get("_comm_amt"),           row.get("_GT"),
                 row.get("_fixed_fee"),          row.get("_total_charges"),
                 gst_v if gst_v else None,       row.get("_myntra_payable"),
-                0,                              None,
+                rebate_v,                       None,
                 SP,                             V,
                 report_date_str or "—",         row.get("brand",""),
                 row.get("order status",""),     row.get("_rate_source",""),
@@ -489,46 +553,50 @@ def myntra_build_excel(result_df, report_date_str="", brand_cfg=None):
         ws.auto_filter.ref = f"A1:{get_column_letter(len(M_HEADERS))}1"
         nr = len(bdf) + 3
         nc = ws.cell(row=nr, column=1,
-            value="🟡 Amber = Fix Rate.  ⬜ White/Blue = Slab.  🟠 Orange PWN = fill manually.")
+            value="🟡 Amber = Fix Rate.  🟣 Purple = Rebate applied.  ⬜ White/Blue = Slab.  🟠 Orange PWN = fill manually.")
         nc.font = Font(bold=True, italic=True, size=9, color="7B4F00", name="Calibri")
         nc.fill = PatternFill("solid", fgColor="FFF9E6")
         ws.merge_cells(f"A{nr}:{get_column_letter(len(M_HEADERS))}{nr}")
 
     # Summary sheet
     ws_s = wb.create_sheet(title="Summary", index=0)
-    sh   = ["Brand","Orders","Fix Rate Orders","Selling Price",
-            "GT Charges","Commission","Fixed Fee","Total Charges","GST","Myntra Payable"]
-    sw   = [14,8,14,18,14,14,12,14,10,18]
+    sh   = ["Brand","Orders","Fix Rate Orders","Rebate Orders","Selling Price",
+            "GT Charges","Commission","Fixed Fee","Total Charges","GST","Rebate","Myntra Payable"]
+    sw   = [14,8,14,12,18,14,14,12,14,10,10,18]
     hf2  = Font(bold=True, color="FFFFFF", size=10, name="Calibri")
     for ci,(h,w) in enumerate(zip(sh,sw),1):
         _mcell(ws_s, 1, ci, h, _M_HF, hf2)
         ws_s.column_dimensions[get_column_letter(ci)].width = w
     ws_s.row_dimensions[1].height = 30
 
-    grand = {k:0.0 for k in ["sp","gt","cm","ff","tc","gst","pay","fix_n","n"]}
+    grand = {k:0.0 for k in ["sp","gt","cm","ff","tc","gst","pay","fix_n","n","rebate","rebate_n"]}
     for ri, brand in enumerate(all_brands, 2):
         bdf   = result_df[result_df["brand"] == brand]
         ok    = bdf[bdf["_slab_ok"] == True]
         fix_n = int((bdf["_rate_source"] == "Fix Rate").sum())
+        rebate_n = int((bdf["_rebate"].fillna(0) != 0).sum()) if "_rebate" in bdf else 0
+        rebate_sum = round(bdf["_rebate"].fillna(0).sum(), 2) if "_rebate" in bdf else 0.0
         n=len(bdf); sp=round(bdf["final amount"].sum(),2)
         gt=round(ok["_GT"].sum(),2); cm=round(ok["_comm_amt"].sum(),2)
         ff=round(ok["_fixed_fee"].sum(),2); tc=round(ok["_total_charges"].sum(),2)
         gst=round(ok["_gst"].sum(),2); pay=round(ok["_myntra_payable"].sum(),2)
         alt = _M_A1 if ri%2==0 else _M_A2
         nf=Font(size=9,name="Calibri"); bf=Font(bold=True,size=9,name="Calibri")
-        for ci,v in enumerate([brand,n,fix_n,sp,gt,cm,ff,tc,gst,pay],1):
+        for ci,v in enumerate([brand,n,fix_n,rebate_n,sp,gt,cm,ff,tc,gst,rebate_sum,pay],1):
             _mcell(ws_s, ri, ci, v, alt, bf if ci==1 else nf,
-                   fmt="#,##0.00" if ci>3 else None)
-        for k,v in zip(["n","sp","gt","cm","ff","tc","gst","pay","fix_n"],[n,sp,gt,cm,ff,tc,gst,pay,fix_n]):
+                   fmt="#,##0.00" if ci>4 else None)
+        for k,v in zip(["n","sp","gt","cm","ff","tc","gst","pay","fix_n","rebate","rebate_n"],
+                        [n,sp,gt,cm,ff,tc,gst,pay,fix_n,rebate_sum,rebate_n]):
             grand[k] += v
 
     gr = len(all_brands)+2
     gf2 = Font(bold=True,color="FFFFFF",size=10,name="Calibri")
-    gv  = ["GRAND TOTAL",grand["n"],grand["fix_n"],
+    gv  = ["GRAND TOTAL",grand["n"],grand["fix_n"],grand["rebate_n"],
            round(grand["sp"],2),round(grand["gt"],2),round(grand["cm"],2),
-           round(grand["ff"],2),round(grand["tc"],2),round(grand["gst"],2),round(grand["pay"],2)]
+           round(grand["ff"],2),round(grand["tc"],2),round(grand["gst"],2),
+           round(grand["rebate"],2),round(grand["pay"],2)]
     for ci,v in enumerate(gv,1):
-        _mcell(ws_s, gr, ci, v, _M_HF, gf2, fmt="#,##0.00" if ci>3 else None)
+        _mcell(ws_s, gr, ci, v, _M_HF, gf2, fmt="#,##0.00" if ci>4 else None)
 
     if "Sheet" in wb.sheetnames: del wb["Sheet"]
     buf = BytesIO(); wb.save(buf)
@@ -896,7 +964,7 @@ with tab_myntra:
         m_csv_files = st.file_uploader("② Orders CSV (one or more)", type=["csv"],
                                         key="m_csv", accept_multiple_files=True)
     with mc3:
-        m_fix_file = st.file_uploader("③ Fix Rate Sheet (optional)", type=["xlsx"], key="m_fix")
+        m_fix_file = st.file_uploader("③ Fix Rate Sheet (optional, incl. Rebate tab)", type=["xlsx"], key="m_fix")
 
     m_col_date, m_col_brand = st.columns([1, 2])
     with m_col_date:
@@ -920,7 +988,9 @@ with tab_myntra:
 <b>Priority per order:</b> 1. Fix Rate (Brand + Style ID + Date) &nbsp;·&nbsp;
 2. Slab (Brand + Category + SP range)<br>
 <b>Fix Rate:</b> Payable = SP − GT − Comm − Fee (GST embedded) &nbsp;·&nbsp;
-<b>Slab:</b> V=SP−GT · Comm=rate(V)×V · GST=(Comm+Fee)×18%
+<b>Slab:</b> V=SP−GT · Comm=rate(V)×V · GST=(Comm+Fee)×18%<br>
+<b>Rebate (optional 'Rebate' tab):</b> Brand + Style ID + Date window → Rebate ₹ is credited
+in its own column, on top of whichever calculation above applied.
 </div>""", unsafe_allow_html=True)
 
     if not m_slab_file or not m_csv_files:
@@ -955,16 +1025,20 @@ Myntra Seller Orders export — <code>brand</code>, <code>article type</code>,
 Fix the Rates sheet and re-upload.</div>""", unsafe_allow_html=True)
                 st.dataframe(pd.DataFrame(m_slab_issues), use_container_width=True, hide_index=True)
 
-        # ── Load Fix Rate ─────────────────────────────────────────────────────
-        m_fix_df = None
+        # ── Load Fix Rate (+ Rebate) ─────────────────────────────────────────
+        m_fix_df    = None
+        m_rebate_df = None
         if m_fix_file:
             with st.spinner("Loading fix rates…"):
                 try:
-                    m_fix_df = myntra_load_fix_rate(m_fix_file.read())
+                    m_fix_df, m_rebate_df = myntra_load_fix_rate(m_fix_file.read())
                     n_combos = m_fix_df[["Brand Name","Style Id"]].drop_duplicates().shape[0]
                     st.success(f"✅ Fix Rate loaded — {len(m_fix_df)} rows · {n_combos} combos")
+                    if m_rebate_df is not None and not m_rebate_df.empty:
+                        n_rcombos = m_rebate_df[["Brand Name","Style Id"]].drop_duplicates().shape[0]
+                        st.success(f"✅ Rebate tab loaded — {len(m_rebate_df)} rows · {n_rcombos} combos")
                 except Exception as e:
-                    st.warning(f"Fix Rate not loaded: {e}")
+                    st.warning(f"Fix Rate / Rebate not loaded: {e}")
 
         # ── Load CSV ──────────────────────────────────────────────────────────
         with st.spinner("Reading orders…"):
@@ -1034,13 +1108,15 @@ Pre-filled with defaults (Marketing 3%, Return ₹45, Royalty 1%).</div>""", uns
         with st.spinner("Reconciling…"):
             m_result = myntra_reconcile(
                 m_rates, m_orders_df, m_oms_map, m_yrn_map, m_pwn_map, m_closed_map,
-                fix_df=m_fix_df, report_date=m_report_date,
+                fix_df=m_fix_df, rebate_df=m_rebate_df, report_date=m_report_date,
                 brand_filter=m_brand_filter if m_brand_filter else None,
                 brand_cfg=m_brand_cfg)
 
         m_ok_df    = m_result[m_result["_slab_ok"] == True]
         m_bad_df   = m_result[m_result["_slab_ok"] == False]
         m_fix_rows = int((m_result["_rate_source"] == "Fix Rate").sum())
+        m_rebate_rows  = int((m_result["_rebate"].fillna(0) != 0).sum()) if "_rebate" in m_result else 0
+        m_rebate_total = round(m_result["_rebate"].fillna(0).sum(), 2) if "_rebate" in m_result else 0.0
 
         # ── KPIs ──────────────────────────────────────────────────────────────
         total_orders  = len(m_result)
@@ -1057,8 +1133,8 @@ Pre-filled with defaults (Marketing 3%, Return ₹45, Royalty 1%).</div>""", uns
             ("Total Charges+GST",    f"₹{total_tc_gst:,.0f}", None, "platform fees"),
             ("Fix Rate Applied",     f"{m_fix_rows}/{total_orders}",
              "positive" if m_fix_rows>0 else None, "style-level overrides"),
-            ("Unmatched Rows",       f"{unmatched}",
-             "negative" if unmatched>0 else "positive", "no slab/fix rate"),
+            ("Rebate Applied",       f"{m_rebate_rows} · ₹{m_rebate_total:,.0f}",
+             "positive" if m_rebate_rows>0 else None, "style + date window match"),
         ]
         for col, (label, value, cls, sub) in zip(cols, kpis):
             with col:
@@ -1068,9 +1144,18 @@ Pre-filled with defaults (Marketing 3%, Return ₹45, Royalty 1%).</div>""", uns
   <div class="metric-sub">{sub}</div>
 </div>""", unsafe_allow_html=True)
 
+        if unmatched > 0:
+            st.markdown(f"""<br><div class="warn-box">
+⚠️ <b>{unmatched} rows</b> unmatched — no slab or fix rate found.</div>""",
+                unsafe_allow_html=True)
         if m_fix_rows > 0:
             st.markdown(f"""<br><div class="warn-box">
 🔒 <b>{m_fix_rows} orders</b> used Fix Rate — GT/Commission/Fixed Fee from Fix Rate sheet.</div>""",
+                unsafe_allow_html=True)
+        if m_rebate_rows > 0:
+            st.markdown(f"""<br><div class="info-box">
+🟣 <b>{m_rebate_rows} orders</b> matched a Rebate window — ₹{m_rebate_total:,.2f} total credited
+in the Rebate column (GT/Commission/Fixed Fee/Payable unchanged).</div>""",
                 unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -1081,6 +1166,8 @@ Pre-filled with defaults (Marketing 3%, Return ₹45, Royalty 1%).</div>""", uns
             bdf  = m_result[m_result["brand"] == brand]
             bok  = bdf[bdf["_slab_ok"] == True]
             fx_n = int((bdf["_rate_source"] == "Fix Rate").sum())
+            rb_n = int((bdf["_rebate"].fillna(0) != 0).sum()) if "_rebate" in bdf else 0
+            rb_sum = round(bdf["_rebate"].fillna(0).sum(), 2) if "_rebate" in bdf else 0.0
             cfg  = m_brand_cfg.get(brand, {})
             mt   = cfg.get("mkt_type", DEFAULT_MARKETING_TYPE)
             mv   = cfg.get("mkt_val",  DEFAULT_MARKETING_VALUE)
@@ -1090,6 +1177,7 @@ Pre-filled with defaults (Marketing 3%, Return ₹45, Royalty 1%).</div>""", uns
                 "Brand":              brand,
                 "Orders":             len(bdf),
                 "Fix Rate Orders":    fx_n,
+                "Rebate Orders":      rb_n,
                 "Marketing Rate":     f"{mv}% of SP" if mt=="%" else f"₹{mv:.2f} flat",
                 "Return Charges (₹)": cfg.get("return", DEFAULT_RETURN_CHARGES),
                 "Royalty":            f"{rv}% of V"  if rt=="%" else f"₹{rv:.2f} flat",
@@ -1098,6 +1186,7 @@ Pre-filled with defaults (Marketing 3%, Return ₹45, Royalty 1%).</div>""", uns
                 "Commission (₹)":     round(bok["_comm_amt"].sum(),2),
                 "Total Charges (₹)":  round(bok["_total_charges"].sum(),2),
                 "GST (₹)":            round(bok["_gst"].sum(),2),
+                "Rebate (₹)":         rb_sum,
                 "Myntra Payable (₹)": round(bok["_myntra_payable"].sum(),2),
             })
         sum_df = pd.DataFrame(summary_rows)
@@ -1121,10 +1210,10 @@ Pre-filled with defaults (Marketing 3%, Return ₹45, Royalty 1%).</div>""", uns
                 "_GT":"GT Charges ₹","_fixed_fee":"Fixed Fee ₹","_total_charges":"Total Charges ₹",
                 "_gst":"GST ₹","_myntra_payable":"Myntra Payable ₹",
                 "_marketing":"Marketing ₹","_return_ch":"Return Charges ₹",
-                "_royalty":"Royalty ₹","_pwn":"PWN+10% ₹",
+                "_royalty":"Royalty ₹","_pwn":"PWN+10% ₹","_rebate":"Rebate ₹",
             }
             NUM_KEYS = {"final amount","_V","_comm_amt","_GT","_fixed_fee",
-                        "_total_charges","_gst","_myntra_payable","_marketing","_return_ch","_royalty","_pwn"}
+                        "_total_charges","_gst","_myntra_payable","_marketing","_return_ch","_royalty","_pwn","_rebate"}
 
             for inner_tab, brand in zip(inner_tabs[:-1], brands_in_result):
                 with inner_tab:
@@ -1132,6 +1221,7 @@ Pre-filled with defaults (Marketing 3%, Return ₹45, Royalty 1%).</div>""", uns
                     ok  = bdf[bdf["_slab_ok"] == True]
                     mis = bdf[bdf["_slab_ok"] == False]
                     fx  = int((bdf["_rate_source"] == "Fix Rate").sum())
+                    rb  = int((bdf["_rebate"].fillna(0) != 0).sum()) if "_rebate" in bdf else 0
                     cfg = m_brand_cfg.get(brand, {})
                     mt  = cfg.get("mkt_type", DEFAULT_MARKETING_TYPE)
                     mv  = cfg.get("mkt_val",  DEFAULT_MARKETING_VALUE)
@@ -1143,12 +1233,13 @@ Pre-filled with defaults (Marketing 3%, Return ₹45, Royalty 1%).</div>""", uns
                                 f' &nbsp;·&nbsp; Return = ₹{rc:.0f}'
                                 f' &nbsp;·&nbsp; Royalty = {""+str(rv)+"%"+" of V" if rt=="%" else "₹"+str(rv)+" flat"}</div>',
                                 unsafe_allow_html=True)
-                    c1,c2,c3,c4,c5 = st.columns(5)
+                    c1,c2,c3,c4,c5,c6 = st.columns(6)
                     c1.metric("Orders",         len(bdf))
                     c2.metric("Selling Price",  f"₹{bdf['final amount'].sum():,.0f}")
                     c3.metric("Myntra Payable", f"₹{ok['_myntra_payable'].sum():,.0f}")
                     c4.metric("Fix Rate Rows",  fx)
-                    c5.metric("Unmatched",      len(mis),
+                    c5.metric("Rebate Rows",    rb)
+                    c6.metric("Unmatched",      len(mis),
                               delta=str(len(mis)) if len(mis) else None, delta_color="inverse")
 
                     disp_cols  = {k:v for k,v in DISPLAY_COLS.items()
@@ -1196,7 +1287,8 @@ Pre-filled with defaults (Marketing 3%, Return ₹45, Royalty 1%).</div>""", uns
         with col_info:
             st.markdown("""<div class="info-box">One sheet per brand + <b>Summary</b> sheet.
 Column headers show the <b>actual rate</b> applied for each brand.<br>
-🟡 Amber = Fix Rate &nbsp;·&nbsp; ⬜ White/Blue = Slab &nbsp;·&nbsp; 🟠 Orange PWN = fill manually.</div>""",
+🟡 Amber = Fix Rate &nbsp;·&nbsp; 🟣 Purple = Rebate applied &nbsp;·&nbsp;
+⬜ White/Blue = Slab &nbsp;·&nbsp; 🟠 Orange PWN = fill manually.</div>""",
                 unsafe_allow_html=True)
 
         st.markdown("<br><br>", unsafe_allow_html=True)
